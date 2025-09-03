@@ -99,7 +99,6 @@ if __name__ == '__main__':
     baseline_run = runs[baseline_idx]
     others = runs[:baseline_idx] + runs[baseline_idx+1:]
     order_disp = ['Covariance', 'Hinge', 'InfoNCE_l2', 'InfoNCE_cosine']
-    # order_disp = ['InfoNCE_l2', 'InfoNCE_cosine']
 
     def coeff_key(x):
         try:

@@ -63,7 +63,6 @@ class DispersionLoss(torch.nn.Module):
             # Norm regularization to prevent blowing up L2 distance too much.
             norm_regularization = (z ** 2).mean() * 0.1
             # NOTE: log-sum-exp trick for `log(mean(exp(logit)))`, only differ by a constant: -log(logit.size(0))
-            print(torch.logsumexp(logit + self.epsilon, dim=0) / B, norm_regularization)
             return torch.logsumexp(logit + self.epsilon, dim=0) / B + norm_regularization
 
         elif self.variant == "infonce_cosine":
