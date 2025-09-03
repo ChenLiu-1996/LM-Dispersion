@@ -93,6 +93,7 @@ class CustomTrainer(Trainer):
         self.disp_coeff = finetuning_args.dispersion_coeff
         self.disp_loc = finetuning_args.dispersion_loc
         self.disp_eval = finetuning_args.dispersion_eval
+
         if self.use_disp:
             variant = finetuning_args.dispersion.lower()
             self.disp_loss_fn = DispersionLoss(variant=variant,
@@ -106,6 +107,8 @@ class CustomTrainer(Trainer):
         # Track logging to avoid duplicate logs per global step
         self._last_logged_step = -1
         self._current_accumulation_step = 0
+
+        # import pdb; pdb.set_trace()
 
     @override
     def create_optimizer(self) -> "torch.optim.Optimizer":
@@ -160,7 +163,18 @@ class CustomTrainer(Trainer):
 
         # Add dispersion if enabled
         if should_compute_disp:
+            # Debug: Check for NaN in hidden states before dispersion computation
+            for i, h in enumerate(outputs.hidden_states):
+                if torch.isnan(h).any():
+                    raise ValueError(f"NaN detected in hidden_states[{i}] before dispersion computation")
+
             disp_val = self.disperse_hidden_states(outputs.hidden_states)
+            
+            # Debug: Check if dispersion computation produced NaN
+            if torch.isnan(disp_val).any():
+                raise ValueError(f"NaN detected in dispersion loss: {disp_val}")
+                # import pdb; pdb.set_trace()
+            
             # Scale dispersion loss the same way as standard loss (only during training)
             if model.training and self.args.gradient_accumulation_steps > 1:
                 scaled_disp_val = disp_val / self.args.gradient_accumulation_steps
