@@ -459,7 +459,7 @@ class FinetuningArguments(
 
     dispersion: Optional[str] = field(
         default=None,
-        metadata={"help": "Type of dispersion loss to use (infonce, hinge, covariance)."},
+        metadata={"help": "Type of dispersion loss to use (infonce_l2, infonce_cosine, hinge, covariance)."},
     )
     dispersion_coeff: float = field(
         default=0.1,
@@ -472,6 +472,14 @@ class FinetuningArguments(
     dispersion_eval: bool = field(
         default=False,
         metadata={"help": "Whether to compute dispersion loss during evaluation/validation."},
+    )
+    tau_infonce_l2: float = field(
+        default=0.5,
+        metadata={"help": "Temperature parameter for InfoNCE L2 dispersion loss."},
+    )
+    tau_infonce_cos: float = field(
+        default=0.5,
+        metadata={"help": "Temperature parameter for InfoNCE cosine dispersion loss."},
     )
 
     def __post_init__(self):

@@ -31,7 +31,8 @@ run_name: llama-wiki-pretrain-dispersion
 
 ### train
 per_device_train_batch_size: 1
-gradient_accumulation_steps: 128
+# gradient_accumulation_steps: 128
+gradient_accumulation_steps: 1
 learning_rate: 1.0e-5
 num_train_epochs: 5
 lr_scheduler_type: cosine
@@ -47,7 +48,10 @@ eval_strategy: steps
 eval_steps: 5
 
 ### dispersion loss
-dispersion: "infonce"  # or "hinge", "covariance"
+# dispersion: "infonce_cosine"  # or "hinge", "covariance"
+dispersion: "hinge"
 dispersion_coeff: 0.1
 dispersion_loc: "last"  # or "all"
-dispersion_eval: true
+dispersion_eval: false
+tau_infonce_l2: 0.5
+tau_infonce_cos: 0.5

@@ -46,6 +46,8 @@ eval_strategy: steps
 eval_steps: 100
 
 ### dispersion loss
-dispersion: "infonce"  # or "hinge", "covariance"
+dispersion: "infonce_cosine"  # or "hinge", "covariance"
 dispersion_coeff: 0.1
 dispersion_loc: "last"  # or "all"
+tau_infonce_l2: 0.5
+tau_infonce_cos: 0.5
