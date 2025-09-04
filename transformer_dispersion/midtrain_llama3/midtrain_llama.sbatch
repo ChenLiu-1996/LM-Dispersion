@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=midtrain-1gpu
+#SBATCH --job-name=pretrain-1gpu
 #SBATCH --partition=gpu_h200
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -8,8 +8,8 @@
 #SBATCH --cpus-per-task=17
 #SBATCH --mem=32G
 #SBATCH --time=1-00:00:00
-#SBATCH --output=slurm_out/midtrain-1gpu-%j.out
-#SBATCH --error=slurm_out/midtrain-1gpu-%j.err
+#SBATCH --output=slurm_out/pretrain-1gpu-%j.out
+#SBATCH --error=slurm_out/pretrain-1gpu-%j.err
 
 echo "Setting up environment variables and paths..."
 # --- User-Specific Paths ---
@@ -29,12 +29,22 @@ if [ -z "${WORK_DIR}" ]; then
   exit 1
 fi
 
-YAML_PATH=${WORK_DIR}/my/llama_wiki_pretrain.yaml
+# Accept YAML path as command line parameter
+if [ $# -eq 0 ]; then
+  echo "Usage: sbatch $0 <yaml_config_file>"
+  echo "Example: sbatch $0 llama_wiki_pretrain_with_dispersion.yaml"
+  exit 1
+fi
 
-# if [ -z "${YAML_PATH}" ]; then
-#   echo "ERROR: Please set the YAML_PATH environment variable."
-#   exit 1
-# fi
+YAML_CONFIG_FILE=$1
+YAML_PATH=${WORK_DIR}/my/${YAML_CONFIG_FILE}
+
+# Validate that the YAML file exists
+if [ ! -f "${YAML_PATH}" ]; then
+  echo "ERROR: YAML config file not found: ${YAML_PATH}"
+  echo "Please ensure the file exists in ${WORK_DIR}/my/"
+  exit 1
+fi
 
 if [ -z "${TRITON_CACHE_DIR}" ]; then
   echo "ERROR: Please set the TRITON_CACHE_DIR environment variable."
