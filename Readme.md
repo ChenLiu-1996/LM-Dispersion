@@ -2,10 +2,9 @@
 
 ## Usage
 1. Mid-train GPT2
-
-    Under `transformer_dispersion/midtrain_gpt2`
+    Under `transformer_dispersion/midtrain_gpt2_huggingface`
     ```
-    accelerate launch midtrain_gpt2.py --train_tokens 100_000_000 --output_dir midtrain_gpt2_default
+    accelerate launch midtrain_gpt2.py --train_tokens 300_000_000 --dispersion 'Covariance' --dispersion_loc 'all' --dispersion_coeff 1.0 --hf_token $HUGGINGFACE_ACCESS_TOKEN
     ```
 
 
