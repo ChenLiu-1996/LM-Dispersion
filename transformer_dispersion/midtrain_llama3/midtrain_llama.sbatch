@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=pretrain-1gpu
+#SBATCH --job-name=midtrain-1gpu
 #SBATCH --partition=gpu_h200
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -8,8 +8,8 @@
 #SBATCH --cpus-per-task=17
 #SBATCH --mem=32G
 #SBATCH --time=1-00:00:00
-#SBATCH --output=slurm_out/pretrain-1gpu-%j.out
-#SBATCH --error=slurm_out/pretrain-1gpu-%j.err
+#SBATCH --output=slurm_out/midtrain-1gpu-%j.out
+#SBATCH --error=slurm_out/midtrain-1gpu-%j.err
 
 echo "Setting up environment variables and paths..."
 # --- User-Specific Paths ---
