@@ -19,3 +19,4 @@ env.sh
 
 slurm_out/
 *.csv
+*.old

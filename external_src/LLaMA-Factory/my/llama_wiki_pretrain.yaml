@@ -1,4 +1,5 @@
 ### model
+# model_name_or_path: meta-llama/Llama-3.2-1B
 model_name_or_path: saves/llama/fresh_llama_1b
 trust_remote_code: true
 
@@ -13,33 +14,38 @@ flash_attn: fa2
 
 ### dataset
 dataset: wikitext
-# template: llama3
-# template: empty
-cutoff_len: 512
-max_samples: 1000
+# template: llama3 # do not use template for pretraining
+template: empty
+cutoff_len: 8192
+# max_samples: 1000
 overwrite_cache: true
 preprocessing_num_workers: 16
 dataloader_num_workers: 4
 
 ### output
-output_dir: saves/llama/full/pretrain_wikitext_test
-logging_steps: 1
-save_steps: 500
+output_dir: saves/llama/full/pretrain_wikitext_new_hparams
+logging_steps: 10
+save_steps: 100
 plot_loss: true
 overwrite_output_dir: true
 save_only_model: false
+# report_to: none
 report_to: wandb  # choices: [none, wandb, tensorboard, swanlab, mlflow]
-run_name: llama-wiki-pretrain-test
+run_name: llama-wiki-pretrain-new-hparams
 
 ### train
 per_device_train_batch_size: 1
-gradient_accumulation_steps: 128
-learning_rate: 1.0e-5
-num_train_epochs: 2
+gradient_accumulation_steps: 64
+learning_rate: 5.0e-5
+# per_device_train_batch_size: 3
+# gradient_accumulation_steps: 86
+# learning_rate: 1e-6
+# max_grad_norm: 10.0
+num_train_epochs: 3
 lr_scheduler_type: cosine
-# warmup_ratio: 0.03
-warmup_steps: 50
-weight_decay: 0.01
+warmup_ratio: 0.1
+# warmup_steps: 50
+# weight_decay: 0.01
 bf16: true
 ddp_timeout: 180000000
 
@@ -48,16 +54,16 @@ ddp_timeout: 180000000
 val_size: 0.01
 per_device_eval_batch_size: 1
 eval_strategy: steps
-eval_steps: 500
+eval_steps: 100
 
 ### LM evaluation
 lmeval_enabled: true
 lmeval_tasks: "paloma_wikitext_103,lambada,mmlu,medmcqa,wikitext"  # Choose your tasks
-# lmeval_num_fewshot: 5
-lmeval_num_fewshot: 1
+lmeval_num_fewshot: 5
+# lmeval_num_fewshot: 1
 # lmeval_max_eval_samples: 200
-lmeval_max_eval_samples: 5
+lmeval_max_eval_samples: 200
 lmeval_eval_at_begin: true
 lmeval_eval_at_end: true
-lmeval_every_n_steps: 10  # Set to null to disable interval evaluation
-lmeval_save_on_eval: false
+lmeval_every_n_steps: 100  # Set to null to disable interval evaluation
+lmeval_save_on_eval: true
