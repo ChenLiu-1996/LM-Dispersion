@@ -1,5 +1,0 @@
-The capital of France is
-Once upon a time, in a land far, far away,
-import torch
-For dinner tonight, I think I will make
-The first person to walk on the moon was Neil

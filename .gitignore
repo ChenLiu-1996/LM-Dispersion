@@ -20,3 +20,6 @@ env.sh
 slurm_out/
 *.csv
 *.old
+wandb/
+*.out
+*.png
