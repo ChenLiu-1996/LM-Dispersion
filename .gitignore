@@ -24,3 +24,5 @@ wandb/
 *.out
 *.png
 old/
+*.arrow
+*.json

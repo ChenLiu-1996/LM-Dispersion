@@ -25,11 +25,6 @@ if [ -z "${OVERLAY_PATH}" ]; then
   exit 1
 fi
 
-if [ -z "${WORK_DIR}" ]; then
-  echo "ERROR: Please set the WORK_DIR environment variable."
-  exit 1
-fi
-
 # Accept YAML path as command line parameter
 # if [ $# -eq 0 ]; then
 #   echo "Usage: sbatch $0 <yaml_config_file>"
@@ -67,7 +62,9 @@ export PYTHONFAULTHANDLER=1
 
 echo "Starting Apptainer container and executing script..."
 
-COMMAND="accelerate launch --mixed_precision bf16 midtrain.py --dataset_name cerebras/SlimPajama-627B --dataset_config default --train_tokens 1_600_000_000 --lr 1e-5 --subset_size 2540000 --eval_subset_size 10000 --block_size 2048 --per_device_train_batch_size 2 --gradient_accumulation_steps 32 --dispersion infonce_l2 --dispersion_loc all --dispersion_coeff 0.5 --use_wandb --wandb_project llama3-midtrain-dispersion-slimpajama --wandb_run_name infonce-l2-all-0.5"
+# COMMAND="accelerate launch --mixed_precision bf16 midtrain.py --dataset_name cerebras/SlimPajama-627B --dataset_config default --train_tokens 1_600_000_000 --lr 1e-5 --block_size 2048 --per_device_train_batch_size 2 --gradient_accumulation_steps 32 --dispersion infonce_l2 --dispersion_loc all --dispersion_coeff 0.5 --use_wandb --wandb_project llama3-midtrain-dispersion-slimpajama --wandb_run_name infonce-l2-all-0.5"
+# using a subset to speed up. the token budget will not use the entire dataset anyways so I do this to speed up the data preprocessing.
+COMMAND="accelerate launch --mixed_precision bf16 midtrain.py --dataset_name DKYoon/SlimPajama-6B --dataset_config default --train_tokens 1_600_000_000 --lr 1e-5 --block_size 2048 --per_device_train_batch_size 2 --gradient_accumulation_steps 32 --dispersion infonce_l2 --dispersion_loc all --dispersion_coeff 0.5 --use_wandb --wandb_project llama3-midtrain-dispersion-slimpajama --wandb_run_name infonce-l2-all-0.5 --num_workers 16"
 
 srun apptainer exec \
     --nv \

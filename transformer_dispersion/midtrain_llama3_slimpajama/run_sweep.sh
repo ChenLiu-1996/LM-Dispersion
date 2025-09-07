@@ -4,7 +4,9 @@
 # Usage: bash run_sweep.sh
 
 # Base command template
-BASE_CMD="accelerate launch --mixed_precision bf16 midtrain.py --dataset_name cerebras/SlimPajama-627B --dataset_config default --train_tokens 1_600_000_000 --lr 1e-5 --subset_size 2540000 --eval_subset_size 10000 --block_size 2048 --per_device_train_batch_size 2 --gradient_accumulation_steps 32 --use_wandb --wandb_project llama3-midtrain-dispersion-slimpajama"
+# BASE_CMD="accelerate launch --mixed_precision bf16 midtrain.py --dataset_name cerebras/SlimPajama-627B --dataset_config default --train_tokens 1_600_000_000 --lr 1e-5 --block_size 2048 --per_device_train_batch_size 2 --gradient_accumulation_steps 32 --use_wandb --wandb_project llama3-midtrain-dispersion-slimpajama"
+# using a subset to speed up. the token budget will not use the entire dataset anyways so I do this to speed up the data preprocessing.
+BASE_CMD="accelerate launch --mixed_precision bf16 midtrain.py --dataset_name DKYoon/SlimPajama-6B --dataset_config default --train_tokens 1_600_000_000 --lr 1e-5 --block_size 2048 --per_device_train_batch_size 2 --gradient_accumulation_steps 32 --use_wandb --wandb_project llama3-midtrain-dispersion-slimpajama --num_workers 16"
 
 # Dispersion configurations (name:dispersion:run_name:session)
 declare -a CONFIGS=(
@@ -56,11 +58,6 @@ export OVERLAY_PATH="/gpfs/radev/home/xs272/scratch/overlay_llama_factory_sessio
 
 if [ -z "\${OVERLAY_PATH}" ]; then
   echo "ERROR: Please set the OVERLAY_PATH environment variable."
-  exit 1
-fi
-
-if [ -z "\${WORK_DIR}" ]; then
-  echo "ERROR: Please set the WORK_DIR environment variable."
   exit 1
 fi
 

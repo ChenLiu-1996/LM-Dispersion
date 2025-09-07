@@ -52,7 +52,7 @@ def filter_non_empty(example):
     return bool(txt and txt.strip())
 
 def tokenize_batch(examples, tokenizer):
-    return tokenizer(examples["text"])
+    return tokenizer(examples["text"], truncation=True, max_length=tokenizer.model_max_length)
 
 def group_texts(examples, block_size):
     concatenated = {}
@@ -77,9 +77,8 @@ def compute_precision_flags():
     return fp16, bf16
 
 def make_splits(dataset_name, dataset_config, tokenizer, block_size, seed, 
-                subset_size=None, eval_subset_size=None, log_path=None):
-    # Use streaming if we're subsetting to avoid downloading entire dataset
-    use_streaming = subset_size is not None or eval_subset_size is not None
+                log_path=None, use_streaming=False, num_proc=1):
+    # Use streaming only if explicitly requested
     ds = load_dataset(dataset_name, dataset_config, streaming=use_streaming)
 
     if "train" in ds:
@@ -90,43 +89,16 @@ def make_splits(dataset_name, dataset_config, tokenizer, block_size, seed,
         ds_train = concatenate_datasets([ds[s] for s in parts])
 
     ds_train = ds_train.filter(filter_non_empty)
-    
-    # Apply training subset if requested
-    if subset_size is not None and subset_size > 0:
-        if use_streaming:
-            # For streaming datasets, shuffle and take first N samples
-            ds_train = ds_train.shuffle(seed=seed, buffer_size=10000).take(subset_size)
-            log(f"Training subset: taking first {subset_size} samples from streaming dataset", filepath=log_path)
-        else:
-            # For non-streaming datasets, use select
-            original_size = len(ds_train)
-            actual_size = min(subset_size, original_size)
-            if actual_size < subset_size:
-                log(f"Warning: Requested {subset_size} training samples but dataset only has {original_size}. Using {actual_size}.", filepath=log_path)
-            ds_train = ds_train.shuffle(seed=seed).select(range(actual_size))
-            log(f"Training subset: {len(ds_train)}/{original_size} samples", filepath=log_path)
 
     if "validation" in ds:
+        print("Using validation split from dataset...")
         ds_val = ds["validation"].filter(filter_non_empty)
     elif "test" in ds:
+        print("Using test split from dataset...")
         ds_val = ds["test"].filter(filter_non_empty)
     else:
+        print("[Warning] No validation/test split found, train")
         ds_val = ds_train
-    
-    # Apply validation subset if requested
-    if eval_subset_size is not None and eval_subset_size > 0:
-        if use_streaming:
-            # For streaming datasets, shuffle and take first N samples
-            ds_val = ds_val.shuffle(seed=seed + 1, buffer_size=10000).take(eval_subset_size)
-            log(f"Validation subset: taking first {eval_subset_size} samples from streaming dataset", filepath=log_path)
-        else:
-            # For non-streaming datasets, use select
-            original_val_size = len(ds_val)
-            actual_val_size = min(eval_subset_size, original_val_size)
-            if actual_val_size < eval_subset_size:
-                log(f"Warning: Requested {eval_subset_size} validation samples but dataset only has {original_val_size}. Using {actual_val_size}.", filepath=log_path)
-            ds_val = ds_val.shuffle(seed=seed + 1).select(range(actual_val_size))
-            log(f"Validation subset: {len(ds_val)}/{original_val_size} samples", filepath=log_path)
 
     # Handle column names for streaming vs non-streaming datasets
     train_cols_to_remove = []
@@ -156,12 +128,14 @@ def make_splits(dataset_name, dataset_config, tokenizer, block_size, seed,
             batched=True,
             remove_columns=train_cols_to_remove,
             desc="Tokenizing train",
+            num_proc=num_proc,
         )
         tok_val = ds_val.map(
             lambda b: tokenize_batch(b, tokenizer),
             batched=True,
             remove_columns=val_cols_to_remove,
             desc="Tokenizing val",
+            num_proc=num_proc,
         )
 
     if use_streaming:
@@ -179,12 +153,14 @@ def make_splits(dataset_name, dataset_config, tokenizer, block_size, seed,
             lambda b: group_texts(b, block_size),
             batched=True,
             desc=f"Grouping train into blocks of {block_size}",
+            num_proc=num_proc,
         ).shuffle(seed=seed)
 
         lm_val = tok_val.map(
             lambda b: group_texts(b, block_size),
             batched=True,
             desc=f"Grouping val into blocks of {block_size}",
+            num_proc=num_proc,
         )
 
     return lm_train, lm_val
@@ -462,9 +438,9 @@ def main(args):
         tokenizer=tokenizer,
         block_size=block_size,
         seed=args.seed,
-        subset_size=args.subset_size,
-        eval_subset_size=args.eval_subset_size,
         log_path=args.log_path,
+        use_streaming=args.use_streaming,
+        num_proc=args.num_workers,
     )
 
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
@@ -590,18 +566,10 @@ if __name__ == "__main__":
     ap.add_argument("--per_device_train_batch_size", type=int, default=16)
     ap.add_argument("--gradient_accumulation_steps", type=int, default=4)
     ap.add_argument("--seed", type=int, default=1)
-    ap.add_argument("--subset_size", type=int, default=None,
-                    help="Number of documents for the random training subset. If None, uses entire dataset.")
-    ap.add_argument("--eval_subset_size", type=int, default=None,
-                    help="Number of documents for the random validation subset. If None, uses entire dataset.")
+    ap.add_argument("--use_streaming", action="store_true",
+                    help="Use streaming dataset loading (default: False). Useful for very large datasets.")
 
     args = ap.parse_args()
-    
-    # Validate subset arguments
-    if args.subset_size is not None and args.subset_size <= 0:
-        raise ValueError("subset_size must be positive")
-    if args.eval_subset_size is not None and args.eval_subset_size <= 0:
-        raise ValueError("eval_subset_size must be positive")
 
     args.output_dir = f'./results/midtrain_{args.model_name}_{"-".join(args.dataset_name.split("/"))}_lr-{args.lr}_token-{args.train_tokens}_disp-{args.dispersion}-{args.dispersion_coeff}-{args.dispersion_loc}_fewshot-{args.num_fewshot}_maxsample-{args.max_eval_samples}_seed-{args.seed}'
     args.log_path = os.path.join(args.output_dir, 'log.txt')
