@@ -121,11 +121,13 @@ def make_splits(dataset_name, dataset_config, hf_token, tokenizer, block_size, s
     return lm_train, lm_val
 
 class LMEvalCallback(TrainerCallback):
-    def __init__(self, tokenizer, tasks, log_path, num_fewshot, max_eval_samples=None,
+    def __init__(self, tokenizer, zeroshot_tasks, fewshot_tasks, log_path, num_fewshot,
+                 max_eval_samples=None,
                  eval_at_begin=True, eval_at_end=True,
                  every_n_steps=None, save_on_eval=True):
         self.tok = tokenizer
-        self.tasks = tasks
+        self.zeroshot_tasks = zeroshot_tasks
+        self.fewshot_tasks = fewshot_tasks
         self.log_path = log_path
         self.num_fewshot = num_fewshot
         self.max_eval_samples = max_eval_samples
@@ -179,10 +181,25 @@ class LMEvalCallback(TrainerCallback):
                     model.save_pretrained(tmp)
                 self.tok.save_pretrained(tmp)
 
-                res = simple_evaluate(
+                res_zeroshot = simple_evaluate(
                     model="hf",
                     model_args=model_args.format(tmp=tmp),
-                    tasks=self.tasks,
+                    tasks=self.zeroshot_tasks,
+                    num_fewshot=0,
+                    batch_size="auto",
+                    device=device_str,
+                    limit=self.max_eval_samples,
+                    log_samples=False,  # Otherwise, will log individual samples in the JSON.
+                    random_seed=args.seed,
+                    numpy_random_seed=args.seed,
+                    torch_random_seed=args.seed,
+                    fewshot_random_seed=args.seed,
+                )
+
+                res_fewshot = simple_evaluate(
+                    model="hf",
+                    model_args=model_args.format(tmp=tmp),
+                    tasks=self.fewshot_tasks,
                     num_fewshot=self.num_fewshot,
                     batch_size="auto",
                     device=device_str,
@@ -194,18 +211,19 @@ class LMEvalCallback(TrainerCallback):
                     fewshot_random_seed=args.seed,
                 )
 
-                if "results" in res:
-                    filename = f"lm_eval_{stage}_{state.global_step}.json" if stage else f"lm_eval_step{state.global_step}.json"
-                    out = os.path.join(args.output_dir, filename)
-                    with open(out, "w") as f:
-                        json.dump({"results": res["results"]}, f, indent=2)
-                    log(f"[LMEval] Results saved to {out}", filepath=self.log_path)
+                assert "results" in res_zeroshot and "results" in res_fewshot
+                filename = f"lm_eval_{stage}_{state.global_step}.json" if stage else f"lm_eval_step{state.global_step}.json"
+                out = os.path.join(args.output_dir, filename)
+                merged_dict = {**res_zeroshot["results"], **res_fewshot["results"]}
+                with open(out, "w") as f:
+                    json.dump({"results": merged_dict}, f, indent=2)
+                log(f"[LMEval] Results saved to {out}", filepath=self.log_path)
 
-                    for task, metrics in res["results"].items():
-                        if isinstance(metrics, dict):
-                            for metric_name, value in metrics.items():
-                                if isinstance(value, (int, float)):
-                                    log(f"[LMEval] {task}.{metric_name}: {value:.4f}", filepath=self.log_path)
+                for task, metrics in merged_dict.items():
+                    if isinstance(metrics, dict):
+                        for metric_name, value in metrics.items():
+                            if isinstance(value, (int, float)):
+                                log(f"[LMEval] {task}.{metric_name}: {value:.4f}", filepath=self.log_path)
 
                 if self.save_on_eval:
                     ckpt_dir = os.path.join(args.output_dir, f"eval_ckpt_{stage or 'interval'}_step{state.global_step}")
@@ -464,26 +482,23 @@ def main(args):
         log(f"[Eval] Raw eval metrics: {eval_metrics}", filepath=args.log_path)
 
     # https://github.com/EleutherAI/lm-evaluation-harness/tree/main/lm_eval/tasks
-    tasks = [
-        "arc_challenge",
-        "gsm8k",
+    zeroshot_tasks = [
         "hellaswag",
         "lambada",
-        "mmlu",
-        "medmcqa",
         "paloma_wikitext_103",
         "piqa",
         "truthfulqa_mc2",
-        "wikitext",
         "winogrande",
     ]
-    for t in tasks:
-        if t in ("lambada", "winogrande", "truthfulqa_mc2"):
-            # These tasks are designed to be zero-shot.
-            tasks.append({"task": t, "num_fewshot": 0})
-        else:
-            tasks.append(t)
-    trainer.add_callback(LMEvalCallback(tokenizer, tasks,
+    fewshot_tasks = [
+        "arc_challenge",
+        "gsm8k",
+        "mmlu",
+        "medmcqa",
+    ]
+    trainer.add_callback(LMEvalCallback(tokenizer,
+                                        zeroshot_tasks,
+                                        fewshot_tasks,
                                         log_path=args.log_path,
                                         num_fewshot=args.num_fewshot,
                                         max_eval_samples=args.max_eval_samples,
