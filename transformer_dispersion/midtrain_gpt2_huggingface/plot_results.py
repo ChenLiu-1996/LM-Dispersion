@@ -24,10 +24,10 @@ empty_metrics_dict = {
 
 metric_range_dict = {
     'paloma_wikitext_103\nword_perplexity': [20, 60],
-    'lambada_openai\nacc': [0.29, 0.34],
+    'lambada_openai\nacc': [0.26, 0.34],
     'lambada_standard\nacc': [0.23, 0.28],
     'medmcqa\nacc': [0.28, 0.34],
-    'mmlu\nacc': [0.25, 0.265],
+    'mmlu\nacc': [0.245, 0.265],
 }
 
 def sort_by_step(steps, means, stds):
@@ -40,8 +40,10 @@ def run_label(dispersion, coeff, loc):
     return f'{dispersion}-{coeff}-{loc}'
 
 def extract_coeff_from_label(str):
-    if str == 'None':
+    if str == 'Default loss':
         return 0
+    elif str == 'No mid-training':
+        return 'N/A'
     else:
         return float(str.split('-')[1].split('-')[0])
 
@@ -141,9 +143,13 @@ if __name__ == '__main__':
             baseline_stds  = results_dict['metrics'][baseline_idx][metric_name]['std']
             baseline_steps, baseline_means, baseline_stds = sort_by_step(baseline_steps, baseline_means, baseline_stds)
             baseline_best, _ = best_over_history(baseline_means, baseline_stds, metric_name)
-            baseline_label = run_label(results_dict['dispersion'][baseline_idx],
-                                       results_dict['dispersion_coeff'][baseline_idx],
-                                       results_dict['dispersion_loc'][baseline_idx])
+            baseline_label = 'Default loss'
+            # Initial performance before mid-training.
+            bars_labels.append('No mid-training')
+            bars_heights.append(baseline_means[0])
+            bars_colors.append('lightgray')
+
+            # Mid-training with default loss.
             bars_labels.append(baseline_label)
             bars_heights.append(baseline_best)
             bars_colors.append('gray')
@@ -170,13 +176,22 @@ if __name__ == '__main__':
             ax_lines.set_xlabel("Step", fontsize=15)
             ax_lines.set_ylabel(metric_name, fontsize=15)
 
-            ax_bars.bar(np.arange(len(bars_labels)), bars_heights, color=bars_colors, alpha=0.8, label=bars_labels)
-            ax_bars.axhline(y=bars_heights[0], linestyle='--', linewidth=2, color=bars_colors[0], alpha=0.8)
+            bars = ax_bars.bar(np.arange(len(bars_labels)), bars_heights, color=bars_colors, alpha=0.8, label=bars_labels)
+            ax_bars.axhline(y=bars_heights[1], linestyle='--', linewidth=2, color=bars_colors[1], alpha=0.8)
             ax_bars.set_xticks(np.arange(len(bars_labels)))
             ax_bars.set_xticklabels([extract_coeff_from_label(label) for label in bars_labels], rotation=0, ha='center', fontsize=9)
             ax_bars.set_ylabel(metric_name, fontsize=15)
             ax_bars.set_xlabel('Dispersion Coefficient', fontsize=15)
             ax_bars.set_ylim(metric_range_dict[metric_name])
+
+            # Annotate the values.
+            ax_bars.bar_label(
+                bars,
+                labels=[f"{v:.3f}" for v in bars_heights],
+                rotation=90,
+                padding=5,
+                fontsize=9,
+            )
 
             if metric_idx == 0:
                 ax_lines.legend(fontsize=10, frameon=False, loc='upper right')
