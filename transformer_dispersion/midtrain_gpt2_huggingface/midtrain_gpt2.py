@@ -5,7 +5,6 @@ import tempfile
 import math
 import argparse
 import torch
-from einops import rearrange
 from lm_eval import simple_evaluate
 from datasets import load_dataset, concatenate_datasets
 from transformers import (
@@ -466,12 +465,19 @@ def main(args):
         "mmlu",
         "medmcqa",
         "wikitext",
+        "hellaswag",
+        "arc_challenge",
+        "winogrande",
+        "piqa",
+        "truthfulqa_mc2",
+        "gsm8k",
     ]
     trainer.add_callback(LMEvalCallback(tokenizer, tasks,
                                         log_path=args.log_path,
                                         num_fewshot=args.num_fewshot,
                                         max_eval_samples=args.max_eval_samples,
-                                        every_n_steps=log_every_n_steps))
+                                        every_n_steps=log_every_n_steps,
+                                        save_on_eval=not args.only_save_last_model))
 
     trainer.train()
     trainer.save_model(args.output_dir)
@@ -507,7 +513,8 @@ if __name__ == "__main__":
     ap.add_argument("--tau_infonce_cos", type=float, default=0.5, help="Temperature.")
     ap.add_argument("--num_fewshot", type=int, default=1, help="Eval num_fewshot.")
     ap.add_argument("--max_eval_samples", type=int, default=200, help="Eval max_eval_samples.")
-    ap.add_argument("--num_ckpt", type=int, default=10, help="Number of checkpoints.")
+    ap.add_argument("--num_ckpt", type=int, default=12, help="Number of checkpoints.")
+    ap.add_argument("--only_save_last_model", action="store_true")
     ap.add_argument("--num_workers", type=int, default=8, help="Number of dataloader workers.")
     ap.add_argument("--block_size", type=int, default=None,
                     help="Context length (default: min(1024, tokenizer max)).")

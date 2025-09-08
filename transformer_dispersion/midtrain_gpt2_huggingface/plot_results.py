@@ -1,3 +1,4 @@
+import argparse
 import os
 import numpy as np
 from glob import glob
@@ -54,15 +55,52 @@ def best_over_history(means, stds, metric_name):
         i = int(np.nanargmax(means))
     return float(means[i]), (np.nan if np.isnan(stds[i]) else float(stds[i]))
 
+def find_metric_ylims(results_dict, all_metric_names, baseline_idx):
+    metric_ylim_bars = {m: [np.inf, -np.inf] for m in all_metric_names}
+
+    for m in all_metric_names:
+        cand = []
+        for idx in range(len(results_dict['metrics'])):
+            if idx == baseline_idx:
+                # Take the initial result too (before mid-traininig).
+                baseline_steps = results_dict['metrics'][idx]['step']
+                baseline_means = results_dict['metrics'][idx][m]['mean']
+                baseline_stds  = results_dict['metrics'][idx][m]['std']
+                baseline_steps, baseline_means, baseline_stds = sort_by_step(baseline_steps, baseline_means, baseline_stds)
+                cand.append(baseline_means[0])
+            curr_means = np.asarray(results_dict['metrics'][idx][m]['mean'], dtype=float)
+            if curr_means.size:
+                curr_best, _ = best_over_history(curr_means, np.asarray(results_dict['metrics'][idx][m]['std']), m)
+                cand.append(curr_best)
+
+        if cand:
+            vmin = np.nanmin(cand); vmax = np.nanmax(cand)
+            metric_ylim_bars[m][0] = vmin; metric_ylim_bars[m][1] = vmax
+
+    for m, (lo, hi) in metric_ylim_bars.items():
+        if not np.isfinite(lo): lo = 0.0
+        if not np.isfinite(hi): hi = 1.0
+        if hi == lo:
+            eps = 1e-6 if lo == 0 else 0.01 * abs(lo)
+            lo, hi = lo - eps, hi + eps
+        pad = 0.05 * (hi - lo)
+        metric_ylim_bars[m] = (lo - pad, hi + pad)
+
+    return metric_ylim_bars
+
 
 if __name__ == '__main__':
+    ap = argparse.ArgumentParser(description="Mid-train GPT-2 with a token budget.")
+    ap.add_argument("--model_name", type=str, default="gpt2")
+    args = ap.parse_args()
+
     result_folder = './results/'
-    figure_lines_save_path = './figures/results_lines.png'
-    figure_bars_save_path = './figures/results_bars.png'
+    figure_lines_save_path = f'./figures/results_lines_{args.model_name}.png'
+    figure_bars_save_path = f'./figures/results_bars_{args.model_name}.png'
 
     os.makedirs(os.path.dirname(figure_lines_save_path), exist_ok=True)
     os.makedirs(os.path.dirname(figure_bars_save_path), exist_ok=True)
-    run_folder_list = sorted(glob(os.path.join(result_folder, 'midtrain_gpt2_*')))
+    run_folder_list = sorted(glob(os.path.join(result_folder, f'midtrain_{args.model_name}_*')))
 
     for run_folder in run_folder_list:
         dispersion = run_folder.split('disp-')[1].split('-')[0]
@@ -112,6 +150,8 @@ if __name__ == '__main__':
         if i == baseline_idx:
             continue
         rows_by_dispersion.setdefault(d, []).append(i)
+
+    metric_ylim_bars = find_metric_ylims(results_dict=results_dict, all_metric_names=all_metric_names, baseline_idx=baseline_idx)
 
     # enforce the requested row order
     row_order = [d for d in ["Covariance", "Hinge", "InfoNCE_l2", "InfoNCE_cosine"] if d in rows_by_dispersion]
@@ -182,7 +222,8 @@ if __name__ == '__main__':
             ax_bars.set_xticklabels([extract_coeff_from_label(label) for label in bars_labels], rotation=0, ha='center', fontsize=9)
             ax_bars.set_ylabel(metric_name, fontsize=15)
             ax_bars.set_xlabel('Dispersion Coefficient', fontsize=15)
-            ax_bars.set_ylim(metric_range_dict[metric_name])
+            # ax_bars.set_ylim(metric_range_dict[metric_name])
+            ax_bars.set_ylim(metric_ylim_bars[metric_name])
 
             # Annotate the values.
             ax_bars.bar_label(
