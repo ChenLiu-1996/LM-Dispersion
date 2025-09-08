@@ -502,11 +502,9 @@ def main(args):
                                         num_fewshot=args.num_fewshot,
                                         max_eval_samples=args.max_eval_samples,
                                         every_n_steps=log_every_n_steps,
-                                        save_on_eval=not args.only_save_last_model))
+                                        save_on_eval=not args.no_save_model))
 
     trainer.train()
-    trainer.save_model(args.output_dir)
-    tokenizer.save_pretrained(args.output_dir)
 
     log(f"\n\nEvaluation after mid-training.", filepath=args.log_path)
     ppl, eval_metrics = eval_perplexity_with_trainer(trainer, lm_val)
@@ -540,7 +538,7 @@ if __name__ == "__main__":
     ap.add_argument("--num_fewshot", type=int, default=5, help="Eval num_fewshot.")
     ap.add_argument("--max_eval_samples", type=int, default=200, help="Eval max_eval_samples.")
     ap.add_argument("--num_ckpt", type=int, default=12, help="Number of checkpoints.")
-    ap.add_argument("--only_save_last_model", action="store_true")
+    ap.add_argument("--no_save_model", action="store_true")
     ap.add_argument("--num_workers", type=int, default=8, help="Number of dataloader workers.")
     ap.add_argument("--per_device_train_batch_size", type=int, default=16)
     ap.add_argument("--gradient_accumulation_steps", type=int, default=16)
