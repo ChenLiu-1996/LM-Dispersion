@@ -158,8 +158,8 @@ if __name__ == '__main__':
     plt.rcParams["font.family"] = "sans-serif"
     plt.rcParams["xtick.labelsize"] = 12
     plt.rcParams["ytick.labelsize"] = 12
-    fig_lines = plt.figure(figsize=(4*len(all_metric_names), 12))
-    fig_bars = plt.figure(figsize=(4*len(all_metric_names), 12))
+    fig_lines = plt.figure(figsize=(4*len(all_metric_names), 3*len(row_order)))
+    fig_bars = plt.figure(figsize=(4*len(all_metric_names), 3*len(row_order)))
 
     for row_idx, row_disp in enumerate(row_order):
         run_indices = rows_by_dispersion[row_disp]

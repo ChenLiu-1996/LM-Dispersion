@@ -426,8 +426,10 @@ def main(args):
         per_device_train_batch_size=args.per_device_train_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         learning_rate=args.lr,
-        weight_decay=0.01,
+        weight_decay = 1e-4,
+        optim_args="beta1=0.9,beta2=0.95",
         max_grad_norm=1.0,
+        warmup_ratio=0.1,
         max_steps=max_steps,
         optim="adamw_torch",
         lr_scheduler_type="cosine",
@@ -442,7 +444,6 @@ def main(args):
         bf16=bf16,
         dataloader_num_workers=args.num_workers,
         remove_unused_columns=True,
-        warmup_ratio=0.1,
     )
 
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
@@ -536,8 +537,8 @@ if __name__ == "__main__":
     ap.add_argument("--tau_infonce_l2", type=float, default=0.5, help="Temperature.")
     ap.add_argument("--tau_infonce_cos", type=float, default=0.5, help="Temperature.")
     ap.add_argument("--num_fewshot", type=int, default=5, help="Eval num_fewshot.")
-    ap.add_argument("--max_eval_samples", type=int, default=200, help="Eval max_eval_samples.")
-    ap.add_argument("--num_ckpt", type=int, default=12, help="Number of checkpoints.")
+    ap.add_argument("--max_eval_samples", type=int, default=500, help="Eval max_eval_samples.")
+    ap.add_argument("--num_ckpt", type=int, default=10, help="Number of checkpoints.")
     ap.add_argument("--no_save_model", action="store_true")
     ap.add_argument("--num_workers", type=int, default=8, help="Number of dataloader workers.")
     ap.add_argument("--per_device_train_batch_size", type=int, default=16)
