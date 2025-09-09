@@ -17,10 +17,10 @@ results_dict = {
 empty_metrics_dict = {
     'step': [],
     'paloma_wikitext_103\nword_perplexity,none': {'mean': [], 'std': []},
-    'hellaswag\nacc_norm,none': {'mean': [], 'std': []},
+    # 'hellaswag\nacc_norm,none': {'mean': [], 'std': []},
     'lambada_openai\nacc,none': {'mean': [], 'std': []},
     'lambada_standard\nacc,none': {'mean': [], 'std': []},
-    'piqa\nacc,none': {'mean': [], 'std': []},
+    # 'piqa\nacc,none': {'mean': [], 'std': []},
     'truthfulqa_mc2\nacc,none': {'mean': [], 'std': []},
     'winogrande\nacc,none': {'mean': [], 'std': []},
     'arc_challenge\nacc,none': {'mean': [], 'std': []},
@@ -86,6 +86,137 @@ def find_metric_ylims(results_dict, all_metric_names, baseline_idx):
         metric_ylim_bars[m] = (lo - pad, hi + pad)
 
     return metric_ylim_bars
+
+def _num_coeff(x):
+    try: return float(x)
+    except: return np.inf
+
+def _best_or_initial_in_pct(results_dict, idx, metric_name, initial=False):
+    means = np.asarray(results_dict['metrics'][idx][metric_name]['mean'], dtype=float)
+    stds  = np.asarray(results_dict['metrics'][idx][metric_name]['std'], dtype=float)
+    steps = np.asarray(results_dict['metrics'][idx]['step'], dtype=int)
+    if steps.size == 0: return np.nan
+    order = np.argsort(steps)
+    means = means[order]
+    stds  = stds[order]
+    if initial:
+        return float(means[0]) * 100 if means.size else np.nan
+    if means.size:
+        m, _ = best_over_history(means, stds, metric_name)
+        return float(m) * 100
+    return np.nan
+
+def render_latex_table_simple(
+    results_dict,
+    metric_names,
+    baseline_idx,
+    rows_by_dispersion,
+    row_order,
+    model_name,
+    lora_suffix,
+    decimals=1,
+    out_path=None
+):
+    rows = []
+    rows.append({"method": "Pretrained (no mid-training)", "disp": "None", "coeff": "N/A", "loc": "-", "src": ("baseline","initial")})
+    rows.append({"method": "Default loss", "disp": "None", "coeff": "0.0", "loc": "-", "src": ("baseline","best")})
+    for disp in row_order:
+        idxs = sorted(rows_by_dispersion[disp], key=lambda i: _num_coeff(results_dict['dispersion_coeff'][i]))
+        for i in idxs:
+            rows.append({
+                "method": results_dict['dispersion'][i],
+                "disp":   results_dict['dispersion'][i],
+                "coeff":  results_dict['dispersion_coeff'][i],
+                "loc":    results_dict['dispersion_loc'][i],
+                "idx":    i,
+                "src":    ("run","best"),
+            })
+
+    ref = {m: _best_or_initial_in_pct(results_dict, baseline_idx, m, initial=True) for m in metric_names}
+
+    # Add an Average column
+    align = "l c c " + " ".join(["c"]*len(metric_names)) + " c"
+    headers = [m.replace("\n"," ").replace(",", " ") for m in metric_names]
+    headers.append("Average")
+
+    lines = []
+    lines.append(r"\begin{tabular}{"+align+r"}")
+    lines.append(r"\toprule")
+    lines.append("Method & Coeff & Loc & " + " & ".join(headers) + r" \\")
+    lines.append(r"\midrule")
+
+    for row in rows:
+        left = f"{row['method']} & {row['coeff']} & {row['loc']}"
+        cells = []
+        vals_for_avg = []
+        bases_for_avg = []
+
+        for m in metric_names:
+            if row['src'] == ("baseline","initial"):
+                val = ref[m]
+                cell = f"{val:.{decimals}f}" if np.isfinite(val) else "N/A"
+                base = ref[m]  # for averaging baseline vs itself; we won't show diff on this row
+            elif row['src'] == ("baseline","best"):
+                val = _best_or_initial_in_pct(results_dict, baseline_idx, m, initial=False)
+                base = ref[m]
+                cell = f"{val:.{decimals}f}"
+                if np.isfinite(base):
+                    diff = val - base
+                    sgn  = "+" if diff >= 0 else ""
+                    color = "forestgreen" if diff >= 0 else "crimson"
+                    cell += f" \\textcolor{{{color}}}{{({sgn}{diff:.{decimals}f})}}"
+            else:
+                val = _best_or_initial_in_pct(results_dict, row['idx'], m, initial=False)
+                base = ref[m]
+                cell = f"{val:.{decimals}f}"
+                if np.isfinite(base):
+                    diff = val - base
+                    sgn  = "+" if diff >= 0 else ""
+                    color = "forestgreen" if diff >= 0 else "crimson"
+                    cell += f" \\textcolor{{{color}}}{{({sgn}{diff:.{decimals}f})}}"
+
+            cells.append(cell)
+            if np.isfinite(val):
+                vals_for_avg.append(val)
+            if np.isfinite(base):
+                bases_for_avg.append(base)
+
+        # Average column with diff
+        if vals_for_avg:
+            avg_val = float(np.mean(vals_for_avg))
+            if bases_for_avg:
+                avg_base = float(np.mean(bases_for_avg))
+            else:
+                avg_base = np.nan
+
+            if row['src'] == ("baseline","initial") or not np.isfinite(avg_base):
+                # Baseline initial row: show value only (no diff), or if base is NaN
+                avg_cell = f"{avg_val:.{decimals}f}"
+            else:
+                avg_cell = f"{avg_val:.{decimals}f}"
+                diff = avg_val - avg_base
+                sgn  = "+" if diff >= 0 else ""
+                color = "forestgreen" if diff >= 0 else "crimson"
+                avg_cell += f" \\textcolor{{{color}}}{{({sgn}{diff:.{decimals}f})}}"
+        else:
+            avg_cell = "N/A"
+
+        cells.append(avg_cell)
+
+        lines.append(left + " & " + " & ".join(cells) + r" \\")
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+
+    table_tex = "\n".join(lines)
+    if out_path is None:
+        os.makedirs("./tables", exist_ok=True)
+        out_path = f"./tables/results_table_{model_name}{lora_suffix}.tex"
+    with open(out_path, "w") as f:
+        f.write(table_tex)
+
+    print("\n===== LaTeX table (copy into Overleaf) =====\n")
+    print(table_tex)
+    print(f"\n[Saved LaTeX table to: {out_path}]\n")
 
 
 if __name__ == '__main__':
@@ -249,3 +380,15 @@ if __name__ == '__main__':
 
     fig_bars.tight_layout(pad=2)
     fig_bars.savefig(figure_bars_save_path, dpi=300)
+
+    metrics_for_table = [m for m in all_metric_names if 'perplexity' not in m.lower()]
+    render_latex_table_simple(
+        results_dict=results_dict,
+        metric_names=metrics_for_table,
+        baseline_idx=baseline_idx,
+        rows_by_dispersion=rows_by_dispersion,
+        row_order=row_order,
+        model_name=args.model_name,
+        lora_suffix=lora_suffix,
+        decimals=1,
+    )

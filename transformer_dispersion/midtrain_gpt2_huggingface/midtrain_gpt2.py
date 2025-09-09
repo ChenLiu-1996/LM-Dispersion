@@ -435,14 +435,12 @@ def main(args):
         per_device_train_batch_size=args.per_device_train_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         learning_rate=args.lr,
-        weight_decay = 1e-4,
         optim_args="beta1=0.9,beta2=0.95",
         max_grad_norm=1.0,
         warmup_ratio=0.1,
         max_steps=max_steps,
         optim="adamw_torch",
         lr_scheduler_type="cosine",
-        lr_scheduler_kwargs={"num_cycles": 0.5},
         log_level="info",
         logging_steps=max(1, max_steps // 20),
         log_on_each_node=False,
@@ -536,7 +534,7 @@ if __name__ == "__main__":
     ap.add_argument("--no_save_model", action="store_true")
     ap.add_argument("--num_workers", type=int, default=8, help="Number of dataloader workers.")
     ap.add_argument("--per_device_train_batch_size", type=int, default=16)
-    ap.add_argument("--gradient_accumulation_steps", type=int, default=16)
+    ap.add_argument("--gradient_accumulation_steps", type=int, default=8)
     ap.add_argument("--seed", type=int, default=1)
 
     args = ap.parse_args()
