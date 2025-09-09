@@ -91,6 +91,9 @@ def find_metric_ylims(results_dict, all_metric_names, baseline_idx):
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description="Mid-train GPT-2 with a token budget.")
     ap.add_argument("--model_name", type=str, default="gpt2")
+    ap.add_argument("--lora", action="store_true", help="Use LoRA (Low-Rank Adaptation) instead of full fine-tuning")
+    ap.add_argument("--dataset_name", type=str, default="Salesforce/wikitext",
+                    help="Hugging Face dataset id.")
     args = ap.parse_args()
 
     result_folder = './results/'
@@ -99,7 +102,8 @@ if __name__ == '__main__':
 
     os.makedirs(os.path.dirname(figure_lines_save_path), exist_ok=True)
     os.makedirs(os.path.dirname(figure_bars_save_path), exist_ok=True)
-    run_folder_list = sorted(glob(os.path.join(result_folder, f'midtrain_{args.model_name}_*')))
+    lora_suffix = "_lora" if args.lora else ""
+    run_folder_list = sorted(glob(os.path.join(result_folder, f'midtrain_{args.model_name}{lora_suffix}_{"-".join(args.dataset_name.split("/"))}_*')))
 
     for run_folder in run_folder_list:
         dispersion = run_folder.split('disp-')[1].split('-')[0]

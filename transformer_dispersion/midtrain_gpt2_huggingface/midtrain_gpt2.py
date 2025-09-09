@@ -182,8 +182,7 @@ class LMEvalCallback(TrainerCallback):
                     save_model = model
 
                 # Check if this is a PEFT model (LoRA)
-                is_peft_model = hasattr(save_model, 'peft_config') or hasattr(save_model, 'base_model')
-
+                is_peft_model = hasattr(save_model, 'peft_config')
                 if is_peft_model:
                     log(f"[LMEval] Detected PEFT model, merging adapters for evaluation...", filepath=self.log_path)
                     save_model = save_model.merge_and_unload()
