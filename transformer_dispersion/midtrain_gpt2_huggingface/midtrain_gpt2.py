@@ -78,9 +78,9 @@ def compute_precision_flags():
 
 def make_splits(dataset_name, dataset_config, hf_token, tokenizer, block_size, seed):
     if dataset_config is None or str(dataset_config).strip() == "":
-        ds = load_dataset(dataset_name, streaming=False, token=hf_token)
+        ds = load_dataset(dataset_name, streaming=False, token=hf_token, cache_dir=args.cache_dir)
     else:
-        ds = load_dataset(dataset_name, dataset_config, streaming=False, token=hf_token)
+        ds = load_dataset(dataset_name, dataset_config, streaming=False, token=hf_token, cache_dir=args.cache_dir)
 
     if "train" in ds:
         ds_train = ds["train"]
@@ -378,14 +378,14 @@ def main(args):
     if args.hf_token:
         os.environ["HF_TOKEN"] = args.hf_token
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name, use_auth_token=args.hf_token)
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name, use_auth_token=args.hf_token, cache_dir=args.cache_dir)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    config = AutoConfig.from_pretrained(args.model_name, use_auth_token=args.hf_token)
+    config = AutoConfig.from_pretrained(args.model_name, use_auth_token=args.hf_token, cache_dir=args.cache_dir)
     if hasattr(config, "loss_type"):
         delattr(config, "loss_type")
-    model = AutoModelForCausalLM.from_pretrained(args.model_name, config=config, use_auth_token=args.hf_token)
+    model = AutoModelForCausalLM.from_pretrained(args.model_name, config=config, use_auth_token=args.hf_token, cache_dir=args.cache_dir)
 
     max_ctx = getattr(model.config, "n_positions",
               getattr(model.config, "max_position_embeddings",
@@ -519,6 +519,7 @@ if __name__ == "__main__":
     ap.add_argument("--model_name", type=str, default="gpt2",
                     help="Hugging Face model id to start from (pretrained).")
     ap.add_argument("--lora", action="store_true", help="Use LoRA (Low-Rank Adaptation) instead of full fine-tuning")
+    ap.add_argument("--cache_dir", type=str, default='./.cache/')
     ap.add_argument("--block_size", type=int, default=1024, help="Context length.")
     ap.add_argument("--dataset_name", type=str, default="Salesforce/wikitext",
                     help="Hugging Face dataset id.")
