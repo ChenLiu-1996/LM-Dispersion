@@ -4,17 +4,17 @@
 # Usage: bash run_sweep.sh
 
 # Base command template
-# BASE_CMD="accelerate launch --mixed_precision bf16 midtrain.py --dataset_name cerebras/SlimPajama-627B --dataset_config default --train_tokens 1_600_000_000 --lr 1e-5 --block_size 2048 --per_device_train_batch_size 2 --gradient_accumulation_steps 32 --use_wandb --wandb_project llama3-midtrain-dispersion-slimpajama"
+# BASE_CMD="accelerate launch --mixed_precision bf16 llama_peft_train.py --dataset_name cerebras/SlimPajama-627B --dataset_config default --train_tokens 1_600_000_000 --lr 1e-5 --block_size 2048 --per_device_train_batch_size 2 --gradient_accumulation_steps 32 --use_wandb --wandb_project llama3-peft-dispersion-slimpajama"
 # using a subset to speed up. the token budget will not use the entire dataset anyways so I do this to speed up the data preprocessing.
-BASE_CMD="accelerate launch --mixed_precision bf16 midtrain.py --dataset_name DKYoon/SlimPajama-6B --dataset_config default --train_tokens 1_600_000_000 --lr 1e-5 --block_size 2048 --per_device_train_batch_size 2 --gradient_accumulation_steps 32 --use_wandb --wandb_project llama3-midtrain-dispersion-slimpajama --num_workers 16"
+BASE_CMD="accelerate launch --mixed_precision bf16 llama_peft_train.py --dataset_name DKYoon/SlimPajama-6B --dataset_config default --train_tokens 1_600_000_000 --lr 1e-5 --block_size 2048 --per_device_train_batch_size 2 --gradient_accumulation_steps 32 --use_wandb --wandb_project llama3-peft-dispersion-slimpajama --num_workers 16 --use_lora --lora_r 16 --lora_alpha 32 --lora_dropout 0.1"
 
 # Dispersion configurations (name:dispersion:run_name:session)
 declare -a CONFIGS=(
-    "none:None:baseline:1"
-    "infonce_l2:infonce_l2:infonce-l2-all-0.5:2"
-    "infonce_cosine:infonce_cosine:infonce-cosine-all-0.5:3"
-    "hinge:hinge:hinge-all-0.5:4"
-    "covariance:covariance:covariance-all-0.5:5"
+    "none:None:baseline-lora:1"
+    "infonce_l2:infonce_l2:infonce-l2-all-0.5-lora:2"
+    "infonce_cosine:infonce_cosine:infonce-cosine-all-0.5-lora:3"
+    "hinge:hinge:hinge-all-0.5-lora:4"
+    "covariance:covariance:covariance-all-0.5-lora:5"
 )
 
 for config in "${CONFIGS[@]}"; do
@@ -34,7 +34,7 @@ for config in "${CONFIGS[@]}"; do
     cat > "temp_${name}.sbatch" << EOF
 #!/bin/bash
 
-#SBATCH --job-name=hf_midtrain-${name}
+#SBATCH --job-name=hf_peft-${name}
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -43,8 +43,8 @@ for config in "${CONFIGS[@]}"; do
 #SBATCH --cpus-per-task=17
 #SBATCH --mem-per-cpu=8G
 #SBATCH --time=1-00:00:00
-#SBATCH --output=slurm_out/hf_midtrain-${name}-%j.out
-#SBATCH --error=slurm_out/hf_midtrain-${name}-%j.err
+#SBATCH --output=slurm_out/hf_peft-${name}-%j.out
+#SBATCH --error=slurm_out/hf_peft-${name}-%j.err
 
 echo "Setting up environment variables and paths..."
 # --- User-Specific Paths ---

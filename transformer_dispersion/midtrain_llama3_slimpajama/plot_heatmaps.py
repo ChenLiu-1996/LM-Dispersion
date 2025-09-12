@@ -70,11 +70,12 @@ def run_label(d, c, l):
 
 
 if __name__ == '__main__':
+    result_folder = './results/midtrain_meta-llama/'
     figure_save_prefix = './figures/embedding_heatmaps_grid'
 
     os.makedirs(os.path.dirname(figure_save_prefix), exist_ok=True)
-    run_folder_list = sorted(glob(os.path.join('./results', 'midtrain_gpt2_*')))
-
+    run_folder_list = sorted(glob(os.path.join(result_folder, 'Llama-3.2-1B_*')))
+    print(run_folder_list)
     repetitions = 5
     max_length = 1024
     vmax = 10
@@ -98,7 +99,7 @@ if __name__ == '__main__':
 
     baseline_run = runs[baseline_idx]
     others = runs[:baseline_idx] + runs[baseline_idx+1:]
-    order_disp = ['Covariance', 'Hinge', 'InfoNCE_l2', 'InfoNCE_cosine']
+    order_disp = ["covariance", "hinge", "infonce_l2", "infonce_cosine"] 
 
     def coeff_key(x):
         try:

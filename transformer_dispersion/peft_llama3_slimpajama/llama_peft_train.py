@@ -4,6 +4,7 @@ import json
 import tempfile
 import math
 import argparse
+from copy import deepcopy
 import torch
 from einops import rearrange
 from lm_eval import simple_evaluate
@@ -20,6 +21,7 @@ from transformers import (
 )
 from peft import LoraConfig, get_peft_model, TaskType, PeftModel
 from dispersion import DispersionLoss
+
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -167,11 +169,13 @@ def make_splits(dataset_name, dataset_config, tokenizer, block_size, seed,
     return lm_train, lm_val
 
 class LMEvalCallback(TrainerCallback):
-    def __init__(self, tokenizer, tasks, log_path, num_fewshot, max_eval_samples=None,
+    def __init__(self, tokenizer, zeroshot_tasks, fewshot_tasks, log_path, num_fewshot,
+                 max_eval_samples=None,
                  eval_at_begin=True, eval_at_end=True,
                  every_n_steps=None, save_on_eval=True):
         self.tok = tokenizer
-        self.tasks = tasks
+        self.zeroshot_tasks = zeroshot_tasks
+        self.fewshot_tasks = fewshot_tasks
         self.log_path = log_path
         self.num_fewshot = num_fewshot
         self.max_eval_samples = max_eval_samples
@@ -217,66 +221,89 @@ class LMEvalCallback(TrainerCallback):
                 stage_str = f" ({stage})" if stage else ""
                 log(f"[LMEval] Running evaluation{stage_str} at step {state.global_step} (world_size={world_size}, device={device_str})...", filepath=self.log_path)
 
-                # Save model - handle distributed training and LoRA
+                # Save model - handle distributed training
                 if hasattr(model, 'module'):
                     # Model is wrapped (e.g., DDP, FSDP)
-                    if hasattr(model.module, 'merge_and_unload'):
-                        # LoRA model - merge adapters and save full model for evaluation
-                        merged_model = model.module.merge_and_unload()
-                        merged_model.save_pretrained(tmp)
-                    else:
-                        model.module.save_pretrained(tmp)
+                    save_model = model.module
                 else:
-                    if hasattr(model, 'merge_and_unload'):
-                        # LoRA model - merge adapters and save full model for evaluation
-                        merged_model = model.merge_and_unload()
-                        merged_model.save_pretrained(tmp)
-                    else:
-                        model.save_pretrained(tmp)
+                    save_model = model
+
+                # Check if this is a PEFT model (LoRA)
+                is_peft_model = hasattr(save_model, 'peft_config')
+                if is_peft_model:
+                    log(f"[LMEval] Detected PEFT model, merging adapters for evaluation...", filepath=self.log_path)
+                    # save_model = save_model.merge_and_unload()
+                    model_copy = deepcopy(save_model).to("cpu")
+                    merged = model_copy.merge_and_unload()
+                    merged.save_pretrained(tmp)
+                    del model_copy, merged
+                else:
+                    log(f"[LMEval] Saving model to temporary directory...", filepath=self.log_path)
+                    save_model.save_pretrained(tmp)
+
                 self.tok.save_pretrained(tmp)
 
-                res = simple_evaluate(
+                res_zeroshot = simple_evaluate(
                     model="hf",
                     model_args=model_args.format(tmp=tmp),
-                    tasks=self.tasks,
+                    tasks=self.zeroshot_tasks,
+                    num_fewshot=0,
+                    batch_size="auto",
+                    device=device_str,
+                    limit=self.max_eval_samples,
+                    log_samples=False,  # Otherwise, will log individual samples in the JSON.
+                    random_seed=args.seed,
+                    numpy_random_seed=args.seed,
+                    torch_random_seed=args.seed,
+                    fewshot_random_seed=args.seed,
+                )
+
+                res_fewshot = simple_evaluate(
+                    model="hf",
+                    model_args=model_args.format(tmp=tmp),
+                    tasks=self.fewshot_tasks,
                     num_fewshot=self.num_fewshot,
                     batch_size="auto",
                     device=device_str,
                     limit=self.max_eval_samples,
                     log_samples=False,  # Otherwise, will log individual samples in the JSON.
+                    random_seed=args.seed,
+                    numpy_random_seed=args.seed,
+                    torch_random_seed=args.seed,
+                    fewshot_random_seed=args.seed,
                 )
 
-                if "results" in res:
-                    filename = f"lm_eval_{stage}_{state.global_step}.json" if stage else f"lm_eval_step{state.global_step}.json"
-                    out = os.path.join(args.output_dir, filename)
-                    with open(out, "w") as f:
-                        json.dump({"results": res["results"]}, f, indent=2)
-                    log(f"[LMEval] Results saved to {out}", filepath=self.log_path)
+                assert "results" in res_zeroshot and "results" in res_fewshot
+                filename = f"lm_eval_{stage}_{state.global_step}.json" if stage else f"lm_eval_step{state.global_step}.json"
+                out = os.path.join(args.output_dir, filename)
+                merged_dict = {**res_zeroshot["results"], **res_fewshot["results"]}
+                with open(out, "w") as f:
+                    json.dump({"results": merged_dict}, f, indent=2)
+                log(f"[LMEval] Results saved to {out}", filepath=self.log_path)
 
-                    for task, metrics in res["results"].items():
-                        if isinstance(metrics, dict):
-                            for metric_name, value in metrics.items():
-                                if isinstance(value, (int, float)):
-                                    log(f"[LMEval] {task}.{metric_name}: {value:.4f}", filepath=self.log_path)
+                # Log to wandb if available
+                wandb_metrics = {}
+                for task, metrics in merged_dict.items():
+                    if isinstance(metrics, dict):
+                        for metric_name, value in metrics.items():
+                            if isinstance(value, (int, float)):
+                                log(f"[LMEval] {task}.{metric_name}: {value:.4f}", filepath=self.log_path)
+                                # Add to wandb metrics with eval prefix
+                                wandb_key = f"eval/{task}.{metric_name}"
+                                wandb_metrics[wandb_key] = value
+                
+                # Log to wandb if initialized
+                if wandb.run is not None:
+                    wandb.log(wandb_metrics, step=state.global_step)
+                    log(f"[LMEval] Logged {len(wandb_metrics)} metrics to wandb", filepath=self.log_path)
 
                 if self.save_on_eval:
                     ckpt_dir = os.path.join(args.output_dir, f"eval_ckpt_{stage or 'interval'}_step{state.global_step}")
                     os.makedirs(ckpt_dir, exist_ok=True)
-                    
-                    # Save LoRA adapters or full model
                     if hasattr(model, 'module'):
-                        if hasattr(model.module, 'save_pretrained'):
-                            # For LoRA models, this saves only the adapter weights
-                            model.module.save_pretrained(ckpt_dir, save_safetensors=getattr(args, "save_safetensors", True))
-                        else:
-                            model.module.save_pretrained(ckpt_dir, save_safetensors=getattr(args, "save_safetensors", True))
+                        model.module.save_pretrained(ckpt_dir, save_safetensors=getattr(args, "save_safetensors", True))
                     else:
-                        if hasattr(model, 'save_pretrained'):
-                            # For LoRA models, this saves only the adapter weights
-                            model.save_pretrained(ckpt_dir, save_safetensors=getattr(args, "save_safetensors", True))
-                        else:
-                            model.save_pretrained(ckpt_dir, save_safetensors=getattr(args, "save_safetensors", True))
-                    
+                        model.save_pretrained(ckpt_dir, save_safetensors=getattr(args, "save_safetensors", True))
                     self.tok.save_pretrained(ckpt_dir)
                     log(f"[LMEval] Weights saved to {ckpt_dir}", filepath=self.log_path)
 
@@ -451,21 +478,31 @@ def main(args):
 
     # Apply LoRA if enabled
     if args.use_lora:
+        log("Applying LoRA configuration...", filepath=args.log_path)
+        model.config.use_cache = False
+        # TODO test and compare vs GPT-2 code
         lora_config = LoraConfig(
             task_type=TaskType.CAUSAL_LM,
+            inference_mode=False,  # Explicit training mode
             r=args.lora_r,
             lora_alpha=args.lora_alpha,
             lora_dropout=args.lora_dropout,
             target_modules=args.lora_target_modules,  # None means auto-detect
+            # modules_to_save=["lm_head"],  # Essential for vocab changes
             bias="none",
         )
         model = get_peft_model(model, lora_config)
         model.print_trainable_parameters()
+        log(f"LoRA applied. Trainable parameters: {model.get_nb_trainable_parameters()}", filepath=args.log_path)
 
-    max_ctx = getattr(model.config, "n_positions", getattr(model.config, "max_position_embeddings", 1024))
+    max_ctx = getattr(model.config, "n_positions",
+              getattr(model.config, "max_position_embeddings",
+              getattr(model.config, "max_sequence_length", 1024)))
     tokenizer.model_max_length = max_ctx
+    print(f"Tokenizer model max length: {tokenizer.model_max_length}")
 
     block_size = args.block_size or getattr(tokenizer, "model_max_length", 8192)
+    print(f"Block size: {block_size}")
 
     lm_train, lm_val = make_splits(
         dataset_name=args.dataset_name,
@@ -550,26 +587,32 @@ def main(args):
         log(f"[Eval] Raw eval metrics: {eval_metrics}", filepath=args.log_path)
 
     # https://github.com/EleutherAI/lm-evaluation-harness/tree/main/lm_eval/tasks
-    tasks = [
-        "paloma_wikitext_103",
-        "lambada",
-        "mmlu",
-        "medmcqa",
-        "wikitext",
+    zeroshot_tasks = [
         "hellaswag",
-        "arc_challenge",
-        "winogrande",
+        "lambada",
+        "paloma_wikitext_103",
         "piqa",
         "truthfulqa_mc2",
-        "gsm8k",
+        "winogrande",
     ]
-    trainer.add_callback(LMEvalCallback(tokenizer, tasks,
+    fewshot_tasks = [
+        "arc_challenge",
+        "gsm8k",
+        "mmlu",
+        "medmcqa",
+    ]
+    trainer.add_callback(LMEvalCallback(tokenizer,
+                                        zeroshot_tasks,
+                                        fewshot_tasks,
                                         log_path=args.log_path,
                                         num_fewshot=args.num_fewshot,
                                         max_eval_samples=args.max_eval_samples,
-                                        every_n_steps=log_every_n_steps))
+                                        every_n_steps=log_every_n_steps,
+                                        save_on_eval=not args.no_save_model))
 
     trainer.train()
+    # trainer.save_model(args.output_dir)
+    # tokenizer.save_pretrained(args.output_dir)
     
     # Save the final model
     if args.use_lora:
@@ -621,6 +664,7 @@ if __name__ == "__main__":
     ap.add_argument("--num_fewshot", type=int, default=1, help="Eval num_fewshot.")
     ap.add_argument("--max_eval_samples", type=int, default=200, help="Eval max_eval_samples.")
     ap.add_argument("--num_ckpt", type=int, default=10, help="Number of checkpoints.")
+    ap.add_argument("--no_save_model", action="store_true")
     ap.add_argument("--num_workers", type=int, default=8, help="Number of dataloader workers.")
     ap.add_argument("--block_size", type=int, default=None,
                     help="Context length (default: tokenizer max).")

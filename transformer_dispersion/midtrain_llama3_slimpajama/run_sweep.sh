@@ -36,10 +36,11 @@ for config in "${CONFIGS[@]}"; do
 
 #SBATCH --job-name=hf_midtrain-${name}
 #SBATCH --partition=gpu
+#SBATCH --qos=qos_nmi
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
-#SBATCH --constraint='h100'
+#SBATCH --constraint='h100|a100'
 #SBATCH --cpus-per-task=17
 #SBATCH --mem-per-cpu=8G
 #SBATCH --time=1-00:00:00

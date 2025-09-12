@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=hf_midtrain-1gpu
+#SBATCH --job-name=hf_peft-1gpu
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -9,8 +9,8 @@
 #SBATCH --cpus-per-task=17
 #SBATCH --mem=32G
 #SBATCH --time=1-00:00:00
-#SBATCH --output=slurm_out/hf_midtrain-1gpu-%j.out
-#SBATCH --error=slurm_out/hf_midtrain-1gpu-%j.err
+#SBATCH --output=slurm_out/hf_peft-1gpu-%j.out
+#SBATCH --error=slurm_out/hf_peft-1gpu-%j.err
 
 echo "Setting up environment variables and paths..."
 # --- User-Specific Paths ---
@@ -62,9 +62,9 @@ export PYTHONFAULTHANDLER=1
 
 echo "Starting Apptainer container and executing script..."
 
-# COMMAND="accelerate launch --mixed_precision bf16 midtrain.py --dataset_name cerebras/SlimPajama-627B --dataset_config default --train_tokens 1_600_000_000 --lr 1e-5 --block_size 2048 --per_device_train_batch_size 2 --gradient_accumulation_steps 32 --dispersion infonce_l2 --dispersion_loc all --dispersion_coeff 0.5 --use_wandb --wandb_project llama3-midtrain-dispersion-slimpajama --wandb_run_name infonce-l2-all-0.5"
+# COMMAND="accelerate launch --mixed_precision bf16 llama_peft_train.py --dataset_name cerebras/SlimPajama-627B --dataset_config default --train_tokens 1_600_000_000 --lr 1e-5 --block_size 2048 --per_device_train_batch_size 2 --gradient_accumulation_steps 32 --dispersion infonce_l2 --dispersion_loc all --dispersion_coeff 0.5 --use_wandb --wandb_project llama3-peft-dispersion-slimpajama --wandb_run_name infonce-l2-all-0.5-lora"
 # using a subset to speed up. the token budget will not use the entire dataset anyways so I do this to speed up the data preprocessing.
-COMMAND="accelerate launch --mixed_precision bf16 midtrain.py --dataset_name DKYoon/SlimPajama-6B --dataset_config default --train_tokens 1_600_000_000 --lr 1e-5 --block_size 2048 --per_device_train_batch_size 2 --gradient_accumulation_steps 32 --dispersion infonce_l2 --dispersion_loc all --dispersion_coeff 0.5 --use_wandb --wandb_project llama3-midtrain-dispersion-slimpajama --wandb_run_name infonce-l2-all-0.5 --num_workers 16"
+COMMAND="accelerate launch --mixed_precision bf16 llama_peft_train.py --dataset_name DKYoon/SlimPajama-6B --dataset_config default --train_tokens 1_600_000_000 --lr 1e-5 --block_size 2048 --per_device_train_batch_size 2 --gradient_accumulation_steps 32 --dispersion infonce_l2 --dispersion_loc all --dispersion_coeff 0.5 --use_wandb --wandb_project llama3-peft-dispersion-slimpajama --wandb_run_name infonce-l2-all-0.5-lora --num_workers 16 --use_lora --lora_r 16 --lora_alpha 32 --lora_dropout 0.1"
 
 srun apptainer exec \
     --nv \
