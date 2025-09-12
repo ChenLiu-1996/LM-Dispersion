@@ -27,3 +27,4 @@ old/
 *.arrow
 *.json
 eval_log.txt
+model_cache/
