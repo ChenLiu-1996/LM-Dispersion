@@ -17,17 +17,22 @@ results_dict = {
 empty_metrics_dict = {
     'step': [],
     'paloma_wikitext_103\nword_perplexity,none': {'mean': [], 'std': []},
+    'anli_r1\nacc,none': {'mean': [], 'std': []},
+    'anli_r2\nacc,none': {'mean': [], 'std': []},
+    'anli_r3\nacc,none': {'mean': [], 'std': []},
     'hellaswag\nacc_norm,none': {'mean': [], 'std': []},
     'lambada_openai\nacc,none': {'mean': [], 'std': []},
-    # 'lambada_standard\nacc,none': {'mean': [], 'std': []},
-    # 'piqa\nacc,none': {'mean': [], 'std': []},
+    'lambada_standard\nacc,none': {'mean': [], 'std': []},
+    'openbookqa\nacc,none': {'mean': [], 'std': []},
+    'piqa\nacc,none': {'mean': [], 'std': []},
     'truthfulqa_mc2\nacc,none': {'mean': [], 'std': []},
     'winogrande\nacc,none': {'mean': [], 'std': []},
-    # 'arc_easy\nacc,none': {'mean': [], 'std': []},
-    # 'arc_challenge\nacc,none': {'mean': [], 'std': []},
+    'arc_easy\nacc,none': {'mean': [], 'std': []},
+    'arc_challenge\nacc,none': {'mean': [], 'std': []},
     # 'gsm8k\nexact_match,flexible-extract': {'mean': [], 'std': []},
     # 'medmcqa\nacc,none': {'mean': [], 'std': []},
     'mmlu\nacc,none': {'mean': [], 'std': []},
+    'mmlu_pro\nexact_match,custom-extract': {'mean': [], 'std': []},
 }
 
 def sort_series_by_step(steps, means, stds):
@@ -232,7 +237,7 @@ def render_latex_table(
                     difference = value - baseline_value
                     sign = "+" if difference >= 0 else ""
                     color_name = "forestgreen" if difference >= 0 else "crimson"
-                    cell_text += f" \\textcolor{{{color_name}}}{{({sign}{difference:.{decimals}f})}}"
+                    cell_text += f"$_{{\\textcolor{{{color_name}}}{{({sign}{difference:.{decimals}f})}}}}$"
             else:
                 run_index = row['idx']
                 best_index = best_step_index_per_run[run_index]
@@ -243,7 +248,7 @@ def render_latex_table(
                     difference = value - baseline_value
                     sign = "+" if difference >= 0 else ""
                     color_name = "forestgreen" if difference >= 0 else "crimson"
-                    cell_text += f" \\textcolor{{{color_name}}}{{({sign}{difference:.{decimals}f})}}"
+                    cell_text += f"$_{{\\textcolor{{{color_name}}}{{({sign}{difference:.{decimals}f})}}}}$"
 
             metric_cells.append(cell_text)
             if np.isfinite(value):
@@ -260,7 +265,7 @@ def render_latex_table(
                 difference = average_value - average_baseline
                 sign = "+" if difference >= 0 else ""
                 color_name = "forestgreen" if difference >= 0 else "crimson"
-                average_cell_text = f"{average_value:.{decimals}f} \\textcolor{{{color_name}}}{{({sign}{difference:.{decimals}f})}}"
+                average_cell_text = f"{average_value:.{decimals}f}$_{{\\textcolor{{{color_name}}}{{({sign}{difference:.{decimals}f})}}}}$"
         else:
             average_cell_text = "N/A"
 
