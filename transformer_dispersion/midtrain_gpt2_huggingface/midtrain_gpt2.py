@@ -54,7 +54,7 @@ def filter_non_empty(example):
 def tokenize_batch(examples, tokenizer):
     return tokenizer(examples["text"])
 
-def group_texts(examples, block_size):
+def group_texts(examples, context_len):
     concatenated = {}
     for k in examples.keys():
         all_vals = []
@@ -62,8 +62,8 @@ def group_texts(examples, block_size):
             all_vals.extend(seq)
         concatenated[k] = all_vals
     total_len = len(concatenated["input_ids"])
-    total_len = (total_len // block_size) * block_size
-    result = {k: [t[i:i+block_size] for i in range(0, total_len, block_size)]
+    total_len = (total_len // context_len) * context_len
+    result = {k: [t[i:i+context_len] for i in range(0, total_len, context_len)]
               for k, t in concatenated.items()}
     result["labels"] = result["input_ids"].copy()
     return result
@@ -76,7 +76,7 @@ def compute_precision_flags():
     else:
         return True, False
 
-def make_splits(dataset_name, dataset_config, hf_token, tokenizer, block_size, seed):
+def make_splits(dataset_name, dataset_config, hf_token, tokenizer, context_len, seed):
     if dataset_config is None or str(dataset_config).strip() == "":
         ds = load_dataset(dataset_name, streaming=False, token=hf_token, cache_dir=args.cache_dir)
     else:
@@ -112,21 +112,26 @@ def make_splits(dataset_name, dataset_config, hf_token, tokenizer, block_size, s
     )
 
     lm_train = tok_train.map(
-        lambda b: group_texts(b, block_size),
+        lambda b: group_texts(b, context_len),
         batched=True,
-        desc=f"Grouping train into blocks of {block_size}",
+        desc=f"Grouping train into blocks of {context_len}",
     ).shuffle(seed=seed)
 
     lm_val = tok_val.map(
-        lambda b: group_texts(b, block_size),
+        lambda b: group_texts(b, context_len),
         batched=True,
-        desc=f"Grouping val into blocks of {block_size}",
+        desc=f"Grouping val into blocks of {context_len}",
     )
 
     return lm_train, lm_val
 
 class LMEvalCallback(TrainerCallback):
-    def __init__(self, tokenizer, zeroshot_tasks, fewshot_tasks, log_path, num_fewshot,
+    def __init__(self,
+                 tokenizer,
+                 zeroshot_tasks, fewshot_tasks,
+                 log_path,
+                 max_gen_tokens,
+                 num_fewshot,
                  max_eval_samples=None,
                  eval_at_begin=True, eval_at_end=True,
                  every_n_steps=None, save_on_eval=True):
@@ -134,6 +139,7 @@ class LMEvalCallback(TrainerCallback):
         self.zeroshot_tasks = zeroshot_tasks
         self.fewshot_tasks = fewshot_tasks
         self.log_path = log_path
+        self.max_gen_tokens = max_gen_tokens
         self.num_fewshot = num_fewshot
         self.max_eval_samples = max_eval_samples
         self.eval_at_begin = eval_at_begin
@@ -206,6 +212,7 @@ class LMEvalCallback(TrainerCallback):
                     batch_size="auto",
                     device=device_str,
                     limit=self.max_eval_samples,
+                    gen_kwargs = {"max_gen_toks": self.max_gen_tokens},
                     log_samples=False,  # Otherwise, will log individual samples in the JSON.
                     random_seed=args.seed,
                     numpy_random_seed=args.seed,
@@ -221,6 +228,7 @@ class LMEvalCallback(TrainerCallback):
                     batch_size="auto",
                     device=device_str,
                     limit=self.max_eval_samples,
+                    gen_kwargs = {"max_gen_toks": self.max_gen_tokens},
                     log_samples=False,  # Otherwise, will log individual samples in the JSON.
                     random_seed=args.seed,
                     numpy_random_seed=args.seed,
@@ -387,10 +395,11 @@ def main(args):
         delattr(config, "loss_type")
     model = AutoModelForCausalLM.from_pretrained(args.model_name, config=config, use_auth_token=args.hf_token, cache_dir=args.cache_dir)
 
-    max_ctx = getattr(model.config, "n_positions",
+    max_gen_tokens = getattr(model.config, "task_specific_params")["text-generation"]["max_length"]
+    context_len = getattr(model.config, "n_positions",
               getattr(model.config, "max_position_embeddings",
               getattr(model.config, "max_sequence_length", 1024)))
-    tokenizer.model_max_length = max_ctx
+    tokenizer.model_max_length = context_len
 
     vocab_size = len(tokenizer)
     model.resize_token_embeddings(vocab_size)
@@ -419,14 +428,14 @@ def main(args):
         dataset_config=args.dataset_config,
         hf_token=args.hf_token,
         tokenizer=tokenizer,
-        block_size=args.block_size,
+        context_len=context_len,
         seed=args.seed,
     )
 
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
-    tokens_per_step = args.per_device_train_batch_size * args.block_size * args.gradient_accumulation_steps * world_size
+    tokens_per_step = args.per_device_train_batch_size * context_len * args.gradient_accumulation_steps * world_size
     if tokens_per_step <= 0:
-        raise ValueError("tokens_per_step computed as 0; check batch size/accumulation/block_size.")
+        raise ValueError("tokens_per_step computed as 0; check batch size/accumulation/context length.")
     max_steps = math.ceil(args.train_tokens / tokens_per_step)
     log(f"Training for {args.train_tokens} tokens, which is {max_steps} steps.", filepath=args.log_path)
     log_every_n_steps = max_steps // args.num_ckpt + 1
@@ -441,12 +450,10 @@ def main(args):
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         learning_rate=learning_rate,
         weight_decay=0.1,
-        optim_args="beta1=0.9,beta2=0.95",
-        max_grad_norm=1.0,
-        warmup_ratio=0.1,
+        warmup_ratio=0,
         max_steps=max_steps,
         optim="adamw_torch",
-        lr_scheduler_type="cosine",
+        lr_scheduler_type="constant",
         log_level="info",
         logging_steps=max(1, max_steps // 20),
         log_on_each_node=False,
@@ -480,15 +487,18 @@ def main(args):
     log(f"Model: {args.model_name}", filepath=args.log_path)
     log(str(model.config), filepath=args.log_path)
     log(f"Dataset: {args.dataset_name} ({args.dataset_config})", filepath=args.log_path)
-    log(f"Block size: {args.block_size}", filepath=args.log_path)
+    log(f"Context length: {context_len}", filepath=args.log_path)
+    log(f"Max gen tokens: {max_gen_tokens}", filepath=args.log_path)
     log(f"Per-device batch: {args.per_device_train_batch_size} | Grad accum: {args.gradient_accumulation_steps} | World size: {world_size}", filepath=args.log_path)
     log(f"Token budget: {args.train_tokens} | Tokens/step: {tokens_per_step} | Max steps: {max_steps}", filepath=args.log_path)
     log(f"Precision: {'bf16' if bf16 else ('fp16' if fp16 else 'fp32')}", filepath=args.log_path)
 
     # https://github.com/EleutherAI/lm-evaluation-harness/tree/main/lm_eval/tasks
     zeroshot_tasks = [
+        "anli",
         "hellaswag",
         "lambada",
+        "openbookqa",
         "paloma_wikitext_103",
         "piqa",
         "truthfulqa_mc2",
@@ -499,12 +509,14 @@ def main(args):
         "arc_easy",
         "gsm8k",
         "mmlu",
+        "mmlu_pro",
         "medmcqa",
     ]
     trainer.add_callback(LMEvalCallback(tokenizer,
                                         zeroshot_tasks,
                                         fewshot_tasks,
                                         log_path=args.log_path,
+                                        max_gen_tokens=max_gen_tokens,
                                         num_fewshot=args.num_fewshot,
                                         max_eval_samples=args.max_eval_samples,
                                         every_n_steps=log_every_n_steps,
@@ -520,7 +532,6 @@ if __name__ == "__main__":
                     help="Hugging Face model id to start from (pretrained).")
     ap.add_argument("--lora", action="store_true", help="Use LoRA (Low-Rank Adaptation) instead of full fine-tuning")
     ap.add_argument("--cache_dir", type=str, default='./.cache/')
-    ap.add_argument("--block_size", type=int, default=1024, help="Context length.")
     ap.add_argument("--dataset_name", type=str, default="Salesforce/wikitext",
                     help="Hugging Face dataset id.")
     ap.add_argument("--dataset_config", type=str, default="wikitext-103-raw-v1",
@@ -536,13 +547,13 @@ if __name__ == "__main__":
     ap.add_argument("--dispersion_loc", type=str, default='all', help="Dispersion loss location.")
     ap.add_argument("--tau_infonce_l2", type=float, default=0.5, help="Temperature.")
     ap.add_argument("--tau_infonce_cos", type=float, default=0.5, help="Temperature.")
-    ap.add_argument("--num_fewshot", type=int, default=5, help="Eval num_fewshot.")
+    ap.add_argument("--num_fewshot", type=int, default=1, help="Eval num_fewshot.")
     ap.add_argument("--max_eval_samples", type=int, default=500, help="Eval max_eval_samples.")
     ap.add_argument("--num_ckpt", type=int, default=10, help="Number of checkpoints.")
     ap.add_argument("--no_save_model", action="store_true")
     ap.add_argument("--num_workers", type=int, default=8, help="Number of dataloader workers.")
     ap.add_argument("--per_device_train_batch_size", type=int, default=16)
-    ap.add_argument("--gradient_accumulation_steps", type=int, default=16)
+    ap.add_argument("--gradient_accumulation_steps", type=int, default=8)
     ap.add_argument("--seed", type=int, default=1)
 
     args = ap.parse_args()
