@@ -183,6 +183,7 @@ def render_latex_table(
     model_name,
     lora_suffix,
     decimals=1,
+    decimals_average=2,
     output_path=None,
     best_step_index_per_run=None,
     sorted_cache=None,
@@ -260,12 +261,12 @@ def render_latex_table(
             average_value = float(np.mean(values_for_average))
             average_baseline = float(np.mean(baseline_values_for_average)) if baseline_values_for_average else np.nan
             if row['src'] == ("baseline","initial") or not np.isfinite(average_baseline):
-                average_cell_text = f"{average_value:.{decimals}f}"
+                average_cell_text = f"{average_value:.{decimals_average}f}"
             else:
-                difference = np.round(average_value, decimals) - np.round(average_baseline, decimals)
+                difference = np.round(average_value, decimals_average) - np.round(average_baseline, decimals_average)
                 sign = "+" if difference >= 0 else ""
                 color_name = "forestgreen" if difference >= 0 else "crimson"
-                average_cell_text = f"{average_value:.{decimals}f}$_{{\\textcolor{{{color_name}}}{{({sign}{difference:.{decimals}f})}}}}$"
+                average_cell_text = f"{average_value:.{decimals_average}f}$_{{\\textcolor{{{color_name}}}{{({sign}{difference:.{decimals_average}f})}}}}$"
         else:
             average_cell_text = "N/A"
 
@@ -561,6 +562,7 @@ def main(args):
         model_name=args.model_name,
         lora_suffix=lora_suffix,
         decimals=1,
+        decimals_average=2,
         best_step_index_per_run=best_step_index_per_run,
         sorted_cache=sorted_cache,
     )
