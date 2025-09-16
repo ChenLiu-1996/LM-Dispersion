@@ -519,7 +519,7 @@ def main(args):
                                         max_gen_tokens=max_gen_tokens,
                                         num_fewshot=args.num_fewshot,
                                         max_eval_samples=args.max_eval_samples,
-                                        every_n_steps=log_every_n_steps,
+                                        every_n_steps=log_every_n_steps if args.train_tokens > 0 else None,
                                         eval_at_end=args.train_tokens > 0,
                                         save_on_eval=not args.no_save_model))
 
