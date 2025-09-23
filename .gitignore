@@ -28,3 +28,4 @@ old/
 *.json
 eval_log.txt
 model_cache/
+results_old/
