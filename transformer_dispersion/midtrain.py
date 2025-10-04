@@ -4,6 +4,7 @@ import json
 import tempfile
 import math
 import argparse
+import hashlib
 import torch
 from einops import rearrange
 from lm_eval import simple_evaluate
@@ -22,6 +23,88 @@ from dispersion import DispersionLoss
 from eval import LMEvalCallback
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+
+def generate_output_dir(args):
+    """
+    Generate a robust, unique output directory name that includes all relevant parameters.
+    Uses a combination of readable parameters and a hash for uniqueness.
+    """
+    # Clean model name (remove slashes and special chars)
+    model_clean = args.model_name.replace("/", "-").replace("_", "-")
+    
+    # Clean dataset name
+    dataset_clean = "-".join(args.dataset_name.split("/"))
+    
+    # Format numerical values to avoid periods in filenames
+    lr_str = f"{args.lr:.0e}".replace(".", "p").replace("-", "m")  # 1e-5 -> 1pm5
+    
+    # Create parameter signature for uniqueness
+    param_dict = {
+        'model': args.model_name,
+        'dataset': args.dataset_name,
+        'dataset_config': args.dataset_config,
+        'lr': args.lr,
+        'train_tokens': args.train_tokens,
+        'dispersion': args.dispersion,
+        'dispersion_coeff': args.dispersion_coeff,
+        'dispersion_loc': args.dispersion_loc,
+        'tau_infonce_l2': args.tau_infonce_l2,
+        'tau_infonce_cos': args.tau_infonce_cos,
+        'num_fewshot': args.num_fewshot,
+        'max_eval_samples': args.max_eval_samples,
+        'seed': args.seed,
+        'block_size': args.block_size,
+        'per_device_train_batch_size': args.per_device_train_batch_size,
+        'gradient_accumulation_steps': args.gradient_accumulation_steps,
+        'lr_scheduler_type': args.lr_scheduler_type,
+    }
+    
+    # Create hash of all parameters for uniqueness
+    param_str = json.dumps(param_dict, sort_keys=True)
+    param_hash = hashlib.md5(param_str.encode()).hexdigest()[:8]
+    
+    # Build readable directory name with most important params
+    if args.dispersion is None:
+        disp_str = "baseline"
+        coeff_str = ""
+        tau_str = ""
+    else:
+        disp_str = args.dispersion
+        coeff_str = f"-c{args.dispersion_coeff}".replace(".", "p")
+        
+        # Only include tau values that are relevant
+        tau_parts = []
+        if args.dispersion == "infonce_l2":
+            tau_parts.append(f"taul2-{args.tau_infonce_l2}".replace(".", "p"))
+        elif args.dispersion == "infonce_cosine":
+            tau_parts.append(f"taucos-{args.tau_infonce_cos}".replace(".", "p"))
+        elif args.dispersion == "infonce_cosine" and args.dispersion == "infonce_l2":  # Should not happen, but just in case
+            tau_parts.extend([
+                f"taul2-{args.tau_infonce_l2}".replace(".", "p"),
+                f"taucos-{args.tau_infonce_cos}".replace(".", "p")
+            ])
+        tau_str = f"-{'-'.join(tau_parts)}" if tau_parts else ""
+    
+    # Format token count (e.g., 300M instead of 300000000)
+    if args.train_tokens >= 1_000_000_000:
+        token_str = f"{args.train_tokens // 1_000_000_000}B"
+    elif args.train_tokens >= 1_000_000:
+        token_str = f"{args.train_tokens // 1_000_000}M"
+    elif args.train_tokens >= 1_000:
+        token_str = f"{args.train_tokens // 1_000}K"
+    else:
+        token_str = str(args.train_tokens)
+    
+    # Build the directory name
+    dir_name = f"midtrain_{model_clean}_{dataset_clean}_{disp_str}{coeff_str}{tau_str}_lr{lr_str}_tok{token_str}_s{args.seed}_{param_hash}"
+    
+    # Ensure directory name isn't too long (most filesystems have 255 char limit)
+    if len(dir_name) > 200:  # Leave some margin
+        # Truncate and rely more on hash for uniqueness
+        dir_name = f"midtrain_{model_clean}_{disp_str}{coeff_str}_lr{lr_str}_tok{token_str}_{param_hash}"
+    
+    return f"./results/{dir_name}"
 
 
 def log(s, filepath=None, to_console=True):
@@ -512,6 +595,7 @@ if __name__ == "__main__":
 
     args = ap.parse_args()
 
-    args.output_dir = f'./results/midtrain_{args.model_name}_{"-".join(args.dataset_name.split("/"))}_lr-{args.lr}_token-{args.train_tokens}_disp-{args.dispersion}-{args.dispersion_coeff}-{args.dispersion_loc}_fewshot-{args.num_fewshot}_maxsample-{args.max_eval_samples}_seed-{args.seed}'
+    # Generate a robust, unique output directory name
+    args.output_dir = generate_output_dir(args)
     args.log_path = os.path.join(args.output_dir, 'log.txt')
     main(args)
