@@ -68,16 +68,21 @@ def run_label(d, c, l):
         return 'None'
     return f'{d}-{c}-{l}'
 
+def coeff_key(x):
+    try:
+        return float(x)
+    except:
+        return np.inf
+
 
 if __name__ == '__main__':
     figure_save_prefix = './figures/embedding_heatmaps_grid'
 
     os.makedirs(os.path.dirname(figure_save_prefix), exist_ok=True)
-    run_folder_list = sorted(glob(os.path.join('./results', 'midtrain_gpt2_*')))
+    run_folder_list = sorted(glob(os.path.join('./results', 'midtrain_gpt2_Salesforce-wikitext*')))
 
-    repetitions = 100
+    repetitions = 3
     max_length = 1024
-    vmax = 10
     ckpt_stride = 2
     plt.rcParams['font.family'] = 'sans-serif'
 
@@ -99,13 +104,7 @@ if __name__ == '__main__':
 
     baseline_run = runs[baseline_idx]
     others = runs[:baseline_idx] + runs[baseline_idx+1:]
-    order_disp = ['Covariance', 'Hinge', 'InfoNCE_l2', 'InfoNCE_cosine']
-
-    def coeff_key(x):
-        try:
-            return float(x)
-        except:
-            return np.inf
+    order_disp = ["decorrelation", "l2_repel", "angular_spread", "orthogonalization"]
 
     for disp in order_disp:
         group = [r for r in others if r[1] == disp]
@@ -115,16 +114,20 @@ if __name__ == '__main__':
 
         runs_in_fig = [baseline_run] + group
 
+        # NOTE: Just plot the final iteration
+        runs_in_fig = runs_in_fig[:1] + runs_in_fig[-1:]
+
         ckpt_lists = []
         max_ckpts = 0
         for (run_folder, d, c, l) in runs_in_fig:
             ckpts = find_checkpoints(run_folder)
             ckpts = ckpts[::ckpt_stride]
             ckpt_lists.append(ckpts)
+
             if len(ckpts) > max_ckpts:
                 max_ckpts = len(ckpts)
 
-        fig = plt.figure(figsize=(4 * max_ckpts, 4 * len(runs_in_fig)))
+        fig = plt.figure(figsize=(6 * max_ckpts, 6 * len(runs_in_fig)))
         for row_idx, (run_folder, d, c, l) in enumerate(tqdm(runs_in_fig)):
             ckpts = ckpt_lists[row_idx]
             for col_idx in tqdm(range(max_ckpts)):
@@ -181,20 +184,14 @@ if __name__ == '__main__':
                     if hist_matrix.size == 0:
                         ax.axis('off')
                     else:
-                        im = ax.imshow(
-                            hist_matrix,
-                            aspect='auto',
-                            origin='lower',
-                            cmap='Reds',
-                            extent=[-1, 1, 0, layer_indices[-1]],
-                            vmin=0,
-                            vmax=vmax,
-                        )
+                        im = ax.imshow(hist_matrix.T, aspect="auto", origin="lower", cmap='Reds',
+                           extent=[0, layer_indices[-1], -1, 1], vmin=0, vmax=10)
 
                     ax.set_title(f'{run_label(d, c, l)}\nstep {step}', fontsize=24)
-                    ax.set_ylabel('Layer', fontsize=20)
-                    ax.set_xlabel('Cosine Similarity', fontsize=20)
-                    ax.tick_params(axis='both', which='major', labelsize=16)
+                    ax.set_xlabel('Layer', fontsize=24)
+                    if col_idx == 0:
+                        ax.set_ylabel('Cosine Similarity', fontsize=24)
+                    ax.tick_params(axis='both', which='major', labelsize=24)
 
                     del model
                     if device == 'cuda':

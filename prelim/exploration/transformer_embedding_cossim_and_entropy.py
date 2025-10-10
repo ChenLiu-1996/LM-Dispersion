@@ -4,6 +4,7 @@ import os
 import sys
 import math
 import numpy as np
+import pandas as pd
 import torch
 from transformers import AutoConfig, AutoTokenizer, AutoModel
 from huggingface_hub import login
@@ -19,14 +20,14 @@ from dse.dse import diffusion_spectral_entropy
 
 def organize_embeddings(embeddings: List[torch.Tensor]) -> List[np.ndarray]:
     embeddings_by_layer = []
-    for z in tqdm(embeddings):
+    for z in embeddings:
         z = z.squeeze(0).cpu().numpy()
         embeddings_by_layer.append(z)
     return embeddings_by_layer
 
 def compute_cosine_similarities(embeddings: List[np.ndarray]) -> List[np.ndarray]:
     cossim_matrix_by_layer = []
-    for z in tqdm(embeddings):
+    for z in embeddings:
         z = normalize(z, axis=1)
         cossim_matrix = np.matmul(z, z.T).clip(-1, 1)  # Clipping to correct occasional rounding error.
         cossim_matrix_by_layer.append(cossim_matrix)
@@ -97,12 +98,12 @@ def plot_similarity_heatmap(cossim_matrix_by_layer: List[np.ndarray],
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 
-    im = ax.imshow(hist_matrix, aspect="auto", origin="lower", cmap='Reds',
-                   extent=[-1, 1, 0, layer_indices[-1]], vmin=0, vmax=10)
+    im = ax.imshow(hist_matrix.T, aspect="auto", origin="lower", cmap='Reds',
+                   extent=[0, layer_indices[-1], -1, 1], vmin=0, vmax=10)
 
     ax.tick_params(axis='both', which='major', labelsize=26)
-    ax.set_xlabel('Cosine Similarity', fontsize=36)
-    ax.set_ylabel('Layer', fontsize=36)
+    ax.set_xlabel('Layer', fontsize=36)
+    ax.set_ylabel('Cosine Similarity', fontsize=36)
 
     cbar = fig.colorbar(im, ax=ax)
     cbar.ax.tick_params(axis='both', which='major', labelsize=26)
@@ -237,6 +238,9 @@ def compute_entropy(matrix: np.ndarray, entropy_type: str, num_bins: int = 256):
         entropy = -np.sum(prob * np.log2(prob))
 
     elif entropy_type == 'von Neumann':
+        '''
+        NOTE: This can be still considered DSE, if we set the kernel function as dot product instead of Gaussian kernel.
+        '''
         # Ensure Hermitian
         assert np.allclose(matrix, matrix.conj().T)
         # Eigen-decomposition
@@ -257,7 +261,7 @@ def compute_entropy(matrix: np.ndarray, entropy_type: str, num_bins: int = 256):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='parameters')
     parser.add_argument('--tokenizer-id', type=str, default=None)
-    parser.add_argument('--model-id', type=str, default='albert-xlarge-v2')
+    parser.add_argument('--model-id', type=str, default='albert-base-v2')
     parser.add_argument('--huggingface-token', type=str, default=None)
     parser.add_argument('--num-attention-heads', type=int, default=None)
     parser.add_argument('--num-hidden-layers', type=int, default=None)
@@ -293,7 +297,8 @@ if __name__ == '__main__':
 
     # Extracting the cosine similarity by layer, and average over repetitions.
     cossim_matrix_by_layer = []
-    for random_seed in range(args.repetitions):
+    DSE_by_layer = []
+    for random_seed in tqdm(range(args.repetitions)):
         torch.manual_seed(random_seed)
 
         # Run model on a random long input.
@@ -305,36 +310,72 @@ if __name__ == '__main__':
             output = model(**tokens, output_hidden_states=True)
             embeddings_by_layer = organize_embeddings(output.hidden_states)
             curr_cossim_matrix_by_layer = compute_cosine_similarities(embeddings_by_layer)
+            # curr_DSE_per_layer = np.array([
+            #     diffusion_spectral_entropy(embeddings, gaussian_kernel_sigma=1.0, t=1)
+            #     for embeddings in embeddings_by_layer])
+            curr_DSE_per_layer = np.array([
+                compute_entropy(cossim_matrix, entropy_type='von Neumann')
+                for cossim_matrix in curr_cossim_matrix_by_layer])
 
         if random_seed == 0:
             cossim_matrix_by_layer = [curr_cossim_matrix_by_layer[i][None, ...].clip(-1, 1) for i in range(len(curr_cossim_matrix_by_layer))]
+            DSE_by_layer = curr_DSE_per_layer[None, ...]
         else:
             for i in range(len(cossim_matrix_by_layer)):
                 cossim_matrix_by_layer[i] = np.concatenate((cossim_matrix_by_layer[i],
                                                             curr_cossim_matrix_by_layer[i][None, ...]),
                                                            axis=0)
+            DSE_by_layer = np.concatenate((DSE_by_layer, curr_DSE_per_layer[None, ...]))
 
     for i in range(len(cossim_matrix_by_layer)):
         cossim_matrix_by_layer[i] = cossim_matrix_by_layer[i].mean(axis=0)
+
 
     # Plot and save histograms.
     model_name_cleaned = '-'.join(args.model_id.split('/'))
     plot_similarity_heatmap(
         cossim_matrix_by_layer,
-        save_path=f'../../visualization/transformer/{model_name_cleaned}/embedding_cossim_heatmap_{model_name_cleaned}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')
+        save_path=f'../visualization/transformer/{model_name_cleaned}/embedding_cossim_heatmap_{model_name_cleaned}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')
+
+    # Save DSE results.
+    npz_DSE = f'../visualization/transformer/{model_name_cleaned}/results_DSE.npz'
+    np.savez(npz_DSE, DSE_by_layer=DSE_by_layer)
+
+    csv_DSE = f'../visualization/transformer/{model_name_cleaned}/results_DSE.csv'
+    columns = [
+        'model_name',
+        'first_layer_mean', 'first_layer_std',
+        'mean_mean', 'mean_std',
+        'last_layer_mean', 'last_layer_std'
+    ]
+    new_data = {
+        'model_name': model_name_cleaned,
+        'first_layer_mean': DSE_by_layer.mean(axis=0)[0],
+        'first_layer_std': DSE_by_layer.std(axis=0)[0],
+        'mean_mean': DSE_by_layer.mean(axis=0).mean(),
+        'mean_std': DSE_by_layer.mean(axis=0).std(),
+        'last_layer_mean': DSE_by_layer.mean(axis=0)[-1],
+        'last_layer_std': DSE_by_layer.std(axis=0)[-1],
+    }
+    if os.path.exists(csv_DSE):
+        df = pd.read_csv(csv_DSE)
+    else:
+        df = pd.DataFrame(columns=columns)
+    df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
+    df.to_csv(csv_DSE, index=False)
 
     if args.plot_all:
         plot_similarity_histograms(
             cossim_matrix_by_layer,
-            save_path=f'../../visualization/transformer/{model_name_cleaned}/embedding_cossim_histogram_{model_name_cleaned}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')
+            save_path=f'../visualization/transformer/{model_name_cleaned}/embedding_cossim_histogram_{model_name_cleaned}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')
 
         # Plot and save metrics (prob density, entropy, etc.).
         plot_probability(
             cossim_matrix_by_layer,
-            save_path=f'../../visualization/transformer/{model_name_cleaned}/embedding_cossim_probability_{model_name_cleaned}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')
+            save_path=f'../visualization/transformer/{model_name_cleaned}/embedding_cossim_probability_{model_name_cleaned}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')
         plot_entropy(
             cossim_matrix_by_layer,
-            save_path=f'../../visualization/transformer/{model_name_cleaned}/embedding_cossim_entropy_{model_name_cleaned}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')
+            save_path=f'../visualization/transformer/{model_name_cleaned}/embedding_cossim_entropy_{model_name_cleaned}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')
         plot_DSE(
             embeddings_by_layer,
-            save_path=f'../../visualization/transformer/{model_name_cleaned}/embedding_DSE_{model_name_cleaned}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')
+            save_path=f'../visualization/transformer/{model_name_cleaned}/embedding_DSE_{model_name_cleaned}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')

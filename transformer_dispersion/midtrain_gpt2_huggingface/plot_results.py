@@ -17,12 +17,12 @@ results_dict = {
 empty_metrics_dict = {
     'step': [],
     'paloma_wikitext_103\nword_perplexity,none': {'mean': [], 'std': []},
-    'anli_r1\nacc,none': {'mean': [], 'std': []},
+    # 'anli_r1\nacc,none': {'mean': [], 'std': []},
     'anli_r2\nacc,none': {'mean': [], 'std': []},
-    'anli_r3\nacc,none': {'mean': [], 'std': []},
-    'hellaswag\nacc_norm,none': {'mean': [], 'std': []},
+    # 'anli_r3\nacc,none': {'mean': [], 'std': []},
+    # 'hellaswag\nacc_norm,none': {'mean': [], 'std': []},
     'lambada_openai\nacc,none': {'mean': [], 'std': []},
-    'lambada_standard\nacc,none': {'mean': [], 'std': []},
+    # 'lambada_standard\nacc,none': {'mean': [], 'std': []},
     'openbookqa\nacc,none': {'mean': [], 'std': []},
     'piqa\nacc,none': {'mean': [], 'std': []},
     'truthfulqa_mc2\nacc,none': {'mean': [], 'std': []},
@@ -30,7 +30,7 @@ empty_metrics_dict = {
     'arc_easy\nacc,none': {'mean': [], 'std': []},
     'arc_challenge\nacc,none': {'mean': [], 'std': []},
     # 'gsm8k\nexact_match,flexible-extract': {'mean': [], 'std': []},
-    # 'medmcqa\nacc,none': {'mean': [], 'std': []},
+    'medmcqa\nacc,none': {'mean': [], 'std': []},
     'mmlu\nacc,none': {'mean': [], 'std': []},
     # 'mmlu_pro\nexact_match,custom-extract': {'mean': [], 'std': []},
 }
@@ -123,7 +123,6 @@ def compute_metric_ylim_by_best_step(results_storage, all_metric_names, baseline
     for metric_name in all_metric_names:
         candidate_values = []
 
-        steps_baseline = sorted_cache[(baseline_run_index, '__steps__')]
         _, means_baseline, _ = sorted_cache[(baseline_run_index, metric_name)]
         if means_baseline.size > 0:
             candidate_values.append(float(means_baseline[0]))
@@ -345,7 +344,7 @@ def main(args):
             continue
         rows_by_dispersion.setdefault(dispersion_name, []).append(i)
 
-    dispersion_order = [d for d in ["Covariance", "Hinge", "InfoNCE_l2", "InfoNCE_cosine"] if d in rows_by_dispersion]
+    dispersion_order = [d for d in ["decorrelation", "l2_repel", "angular_spread", "orthogonalization"] if d in rows_by_dispersion]
     if not dispersion_order:
         dispersion_order = ["Baseline"]
         rows_by_dispersion["Baseline"] = []
