@@ -7,23 +7,23 @@ class DispersionLoss(torch.nn.Module):
     '''
     Variants (exactly as in the table):
 
-      InfoNCE_l2:     log E_{i,j}[exp(-D(z_i, z_j) / \tau_l2)], D(z_i, z_j) = pdist(z_i, z_j, p=2)**2
-      InfoNCE_cosine: log E_{i,j}[exp(-D(z_i, z_j) / \tau_cos)], D(z_i, z_j) = - z_i z_j / (||z_i|| ||z_j||)
-      Hinge:          E_{i,j}[max(0, margin - D(z_i, z_j))^2]
-      Covariance:     \sum_{(m,n), m != n} Cov_{mn}^2, after l2-normalization
+      Decorrelation:     \sum_{(m,n), m != n} Cov_{mn}^2, after l2-normalization
+      l2_repel:          log E_{i,j}[exp(-D(z_i, z_j) / \tau_l2)], D(z_i, z_j) = pdist(z_i, z_j, p=2)**2
+      Angular spread:    log E_{i,j}[exp(-D(z_i, z_j) / \tau_cos)], D(z_i, z_j) = - z_i z_j / (||z_i|| ||z_j||)
+      Orthogonalization: E_{i,j}[max(0, margin - D(z_i, z_j))^2]
 
     Notes:
       - \tau_l2, \tau_cos and margin are kept as internal constants for simplicity.
     '''
     def __init__(self,
-                 variant: Literal["infonce_l2", "infonce_cosine", "hinge", "covariance"],
+                 variant: Literal["decorrelation", "l2_repel", "angular_spread", "orthogonalization"],
                  tau_l2: float = 0.5,
                  tau_cos: float = 0.5,
                  margin: float = 0.5,  # NOTE: 0.5 angular cosine distance = orthogonal.
                  epsilon: float = 1e-4):
         super().__init__()
         variant = variant.lower()
-        assert variant in {"infonce_l2", "infonce_cosine", "hinge", "covariance"}
+        assert variant in {"decorrelation", "l2_repel", "angular_spread", "orthogonalization"}
         self.variant = variant
         self.tau_l2 = float(tau_l2)
         self.tau_cos = float(tau_cos)
@@ -43,7 +43,7 @@ class DispersionLoss(torch.nn.Module):
         if F < 2:
             raise ValueError(f'DispersionLoss expects F >= 2 in [B, L, F]; got {F}.')
 
-        if self.variant == "covariance":
+        if self.variant == "decorrelation":
             # NOTE: The covariance matrix `Cov` has shape [B, L, L].
             # \sum_{(m,n), m != n} Cov_{mn}^2, after l2-normalization
             z_centered = (z - z.mean(dim=2, keepdim=True)) / z.std(dim=2, keepdim=True)
@@ -51,7 +51,7 @@ class DispersionLoss(torch.nn.Module):
             non_diag = ~torch.eye(L, dtype=torch.bool, device=z.device).unsqueeze(0).repeat(B, 1, 1)
             return Cov.pow(2).masked_select(non_diag).mean()
 
-        elif self.variant == "infonce_l2":
+        elif self.variant == "l2_repel":
             # NOTE: The distance matrix matrix `D` has shape [B, L, L].
             # (z - z^T)^2 = z^2 + {z^T}^2 - 2 z z^T. I verified it's the same as torch.cdist(z, z).
             z_sq = (z ** 2).sum(dim=2, keepdim=True)
@@ -65,7 +65,7 @@ class DispersionLoss(torch.nn.Module):
             # NOTE: log-sum-exp trick for `log(mean(exp(logit)))`, only differ by a constant: -log(logit.size(0))
             return torch.logsumexp(logit + self.epsilon, dim=0) / B + norm_regularization
 
-        elif self.variant == "infonce_cosine":
+        elif self.variant == "angular_spread":
             # NOTE: The distance matrix matrix `D` has shape [B, L, L].
             z_norm = z / torch.linalg.norm(z, dim=2, keepdim=True)
             cossim = z_norm @ rearrange(z_norm, 'b l f -> b f l')
@@ -75,7 +75,7 @@ class DispersionLoss(torch.nn.Module):
             # NOTE: log-sum-exp trick for `log(mean(exp(logit)))`, only differ by a constant: -log(logit.size(0))
             return torch.logsumexp(logit + self.epsilon, dim=0) / B
 
-        else:
+        elif self.variant == 'orthogonalization':
             # NOTE: The distance matrix matrix `D` has shape [B, L, L].
             z_norm = z / torch.linalg.norm(z, dim=2, keepdim=True)
             cossim = z_norm @ rearrange(z_norm, 'b l f -> b f l')
@@ -88,11 +88,11 @@ class DispersionLoss(torch.nn.Module):
 if __name__ == '__main__':
     from datasets import load_dataset
     from transformers import AutoTokenizer, AutoModelForCausalLM
-    from midtrain_gpt2 import CausalLMLoss
+    from midtrain_gpt2_huggingface.midtrain_gpt2 import CausalLMLoss
 
     import os
     import sys
-    import_dir = '/'.join(os.path.realpath(__file__).split('/')[:-3])
+    import_dir = '/'.join(os.path.realpath(__file__).split('/')[:-2])
     sys.path.insert(0, os.path.join(import_dir, 'prelim'))
     from utils.text_data import get_random_long_text
 
@@ -133,7 +133,7 @@ if __name__ == '__main__':
     z_base_list = [vec.detach() for vec in out.hidden_states]
 
     # 3) Your exact test loop, but with real hidden states
-    for variant in ["covariance", "infonce_l2", "infonce_cosine", "hinge"]:
+    for variant in ["decorrelation", "l2_repel", "angular_spread", "orthogonalization"]:
         print(f"\nVariant: {variant}")
         loss_fn = DispersionLoss(variant=variant)
 
