@@ -11,19 +11,20 @@ class DispersionLoss(torch.nn.Module):
       l2_repel:          log E_{i,j}[exp(-D(z_i, z_j) / \tau_l2)], D(z_i, z_j) = pdist(z_i, z_j, p=2)**2
       Angular spread:    log E_{i,j}[exp(-D(z_i, z_j) / \tau_cos)], D(z_i, z_j) = - z_i z_j / (||z_i|| ||z_j||)
       Orthogonalization: E_{i,j}[max(0, margin - D(z_i, z_j))^2]
+      tsne entropy:      \sum_{(i, j)} p_{j|i} log_2 p_{j|i}, p_{j|i} = exp(-||x_i - x_j||^2 / \sigma^2)
 
     Notes:
       - \tau_l2, \tau_cos and margin are kept as internal constants for simplicity.
     '''
     def __init__(self,
-                 variant: Literal["decorrelation", "l2_repel", "angular_spread", "orthogonalization"],
+                 variant: Literal["decorrelation", "l2_repel", "angular_spread", "orthogonalization", "tsne_entropy"],
                  tau_l2: float = 0.5,
                  tau_cos: float = 0.5,
                  margin: float = 0.5,  # NOTE: 0.5 angular cosine distance = orthogonal.
                  epsilon: float = 1e-4):
         super().__init__()
         variant = variant.lower()
-        assert variant in {"decorrelation", "l2_repel", "angular_spread", "orthogonalization"}
+        assert variant in {"decorrelation", "l2_repel", "angular_spread", "orthogonalization", "tsne_entropy"}
         self.variant = variant
         self.tau_l2 = float(tau_l2)
         self.tau_cos = float(tau_cos)
@@ -59,9 +60,9 @@ class DispersionLoss(torch.nn.Module):
             # Scale the squared distance matrix by dim since L2-distance scales by sqrt(dim).
             D = (D / F).clamp_min(0.0)
             non_diag = ~torch.eye(L, dtype=torch.bool, device=z.device)
-            logit = - D.masked_select(non_diag) / self.tau_l2
+            logit = -D.masked_select(non_diag) / self.tau_l2
             # Norm regularization to prevent blowing up L2 distance too much.
-            norm_regularization = (z ** 2).mean()
+            norm_regularization = (z ** 2).mean() * 1e-2
             # NOTE: log-sum-exp trick for `log(mean(exp(logit)))`, only differ by a constant: -log(logit.size(0))
             return torch.logsumexp(logit + self.epsilon, dim=0) / B + norm_regularization
 
@@ -71,7 +72,7 @@ class DispersionLoss(torch.nn.Module):
             cossim = z_norm @ rearrange(z_norm, 'b l f -> b f l')
             D = torch.arccos(torch.clamp(cossim, self.epsilon, 1 - self.epsilon)) / torch.pi
             non_diag = ~torch.eye(L, dtype=torch.bool, device=z.device)
-            logit = - D.masked_select(non_diag) / self.tau_cos
+            logit = -D.masked_select(non_diag) / self.tau_cos
             # NOTE: log-sum-exp trick for `log(mean(exp(logit)))`, only differ by a constant: -log(logit.size(0))
             return torch.logsumexp(logit + self.epsilon, dim=0) / B
 
@@ -83,6 +84,32 @@ class DispersionLoss(torch.nn.Module):
             non_diag = ~torch.eye(L, dtype=torch.bool, device=z.device)
             diff = torch.clamp(self.margin - D, min=0.0)
             return diff.pow(2).masked_select(non_diag).mean()
+
+        elif self.variant == "tsne_entropy":
+            # NOTE: The distance matrix matrix `D` has shape [B, L, L].
+            # (z - z^T)^2 = z^2 + {z^T}^2 - 2 z z^T. I verified it's the same as torch.cdist(z, z).
+            z_sq = (z ** 2).sum(dim=2, keepdim=True)
+            D = (z_sq + rearrange(z_sq, 'b l f -> b f l') - 2 * z @ rearrange(z, 'b l f -> b f l'))
+            # Scale the squared distance matrix by dim since L2-distance scales by sqrt(dim).
+            D = (D / F).clamp_min(0.0)
+
+            # Use fixed sigma (bandwidth)
+            sigma_sq = self.tau_l2
+            logit = -D / sigma_sq
+
+            # Set diagonal to -inf so p_{i|i} = 0 after softmax
+            mask = torch.eye(L, dtype=torch.bool, device=z.device).unsqueeze(0)
+            logit = logit.masked_fill(mask, float('-inf'))
+
+            # Compute conditional probabilities p_{j|i} using softmax
+            P = torch.softmax(logit, dim=2)
+
+            # Compute entropy: - sum_j p_{j|i} log p_{j|i}
+            log_P = torch.log2(P + self.epsilon)
+            entropy_per_point = -torch.sum(P * log_P, dim=2)  # [B, L]
+
+            # Minimize negative entropy to maximize entropy.
+            return -entropy_per_point.mean()
 
 
 if __name__ == '__main__':
@@ -133,7 +160,7 @@ if __name__ == '__main__':
     z_base_list = [vec.detach() for vec in out.hidden_states]
 
     # 3) Your exact test loop, but with real hidden states
-    for variant in ["decorrelation", "l2_repel", "angular_spread", "orthogonalization"]:
+    for variant in ["decorrelation", "l2_repel", "angular_spread", "orthogonalization", "tsne_entropy"]:
         print(f"\nVariant: {variant}")
         loss_fn = DispersionLoss(variant=variant)
 
