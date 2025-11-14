@@ -344,7 +344,7 @@ def main(args):
             continue
         rows_by_dispersion.setdefault(dispersion_name, []).append(i)
 
-    dispersion_order = [d for d in ["decorrelation", "l2_repel", "angular_spread", "orthogonalization"] if d in rows_by_dispersion]
+    dispersion_order = [d for d in ["decorrelation", "InfoNCE_l2", "l2_repel", "angular_spread", "orthogonalization", "tsne_entropy"] if d in rows_by_dispersion]
     if not dispersion_order:
         dispersion_order = ["Baseline"]
         rows_by_dispersion["Baseline"] = []
