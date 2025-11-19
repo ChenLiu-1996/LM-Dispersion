@@ -392,7 +392,6 @@ def main(args):
     if hasattr(model, "base_model") and hasattr(model.base_model, "config"):
         model.base_model.config.vocab_size = vocab_size
 
-    model = torch.compile(model)
     lm_train, lm_val = make_splits(
         dataset_name=args.dataset_name,
         dataset_config=args.dataset_config,
