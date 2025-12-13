@@ -6,10 +6,9 @@ import math
 import numpy as np
 import pandas as pd
 import torch
-from transformers import AutoConfig, AutoTokenizer, AutoModel
+from transformers import AutoConfig, AutoTokenizer, AutoModel, AutoModelForCausalLM
 from huggingface_hub import login
 import matplotlib.pyplot as plt
-import tempfile
 from tqdm import tqdm
 
 import_dir = '/'.join(os.path.realpath(__file__).split("/")[:-2])
@@ -261,7 +260,9 @@ def compute_entropy(matrix: np.ndarray, entropy_type: str, num_bins: int = 256):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='parameters')
     parser.add_argument('--tokenizer-id', type=str, default=None)
+    parser.add_argument('--cache-dir', type=str, default='/home/cl2482/palmer_scratch/.cache/')
     parser.add_argument('--model-id', type=str, default='albert-base-v2')
+    parser.add_argument('--dataset', type=str, default='wikipedia')
     parser.add_argument('--huggingface-token', type=str, default=None)
     parser.add_argument('--num-attention-heads', type=int, default=None)
     parser.add_argument('--num-hidden-layers', type=int, default=None)
@@ -272,28 +273,28 @@ if __name__ == '__main__':
     if args.huggingface_token is not None:
         login(token=args.huggingface_token)
 
-    with tempfile.TemporaryDirectory() as tmp_cache:
-        config_kwargs = {'cache_dir': tmp_cache}
-        if args.num_attention_heads is not None:
-            # NOTE: We cannot change number of attention heads for most models.
-            # ALBERT is an exception.
-            config_kwargs['num_attention_heads'] = args.num_attention_heads
+    config_kwargs = {'cache_dir': args.cache_dir}
+    if args.num_attention_heads is not None:
+        # NOTE: We cannot change number of attention heads for most models.
+        # ALBERT is an exception.
+        config_kwargs['num_attention_heads'] = args.num_attention_heads
 
-        if args.num_hidden_layers is not None:
-            # NOTE: We cannot change number of layeres for most models.
-            # ALBERT model's attention blocks are identical,
-            # so it can be further stacked without a problem.
-            config_kwargs['num_hidden_layers'] = args.num_hidden_layers
+    if args.num_hidden_layers is not None:
+        # NOTE: We cannot change number of layeres for most models.
+        # ALBERT model's attention blocks are identical,
+        # so it can be further stacked without a problem.
+        config_kwargs['num_hidden_layers'] = args.num_hidden_layers
 
-        if args.tokenizer_id is None:
-            args.tokenizer_id = args.model_id
+    if args.tokenizer_id is None:
+        args.tokenizer_id = args.model_id
 
-        try:
-            tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_id, cache_dir=tmp_cache)
-            config = AutoConfig.from_pretrained(args.model_id, **config_kwargs)
-            model = AutoModel.from_pretrained(args.model_id, config=config, cache_dir=tmp_cache)
-        except Exception as e:
-            print(f"Unable to process model: {args.model_id}. Error occurred: {e}.")
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_id, cache_dir=args.cache_dir, trust_remote_code=True)
+    config = AutoConfig.from_pretrained(args.model_id, **config_kwargs, trust_remote_code=True)
+    try:
+        model = AutoModel.from_pretrained(args.model_id, config=config, cache_dir=args.cache_dir, trust_remote_code=True).eval()
+    except Exception as e:
+        print(f"Unable to process model: {args.model_id}. Error occurred: {e}.")
+        model = AutoModelForCausalLM.from_pretrained(args.model_id, cache_dir=args.cache_dir, trust_remote_code=True).eval()
 
     # Extracting the cosine similarity by layer, and average over repetitions.
     cossim_matrix_by_layer = []
@@ -302,7 +303,7 @@ if __name__ == '__main__':
         torch.manual_seed(random_seed)
 
         # Run model on a random long input.
-        text = get_random_long_text('wikipedia', random_seed=random_seed, min_word_count=1024, max_word_count=1280)
+        text = get_random_long_text(args.dataset, random_seed=random_seed, min_word_count=1024, max_word_count=1280)
         tokens = tokenizer(text, return_tensors='pt', truncation=True, max_length=512)
 
         # Extract the cosine similarities among token embeddings (hidden states).
@@ -310,12 +311,9 @@ if __name__ == '__main__':
             output = model(**tokens, output_hidden_states=True)
             embeddings_by_layer = organize_embeddings(output.hidden_states)
             curr_cossim_matrix_by_layer = compute_cosine_similarities(embeddings_by_layer)
-            # curr_DSE_per_layer = np.array([
-            #     diffusion_spectral_entropy(embeddings, gaussian_kernel_sigma=1.0, t=1)
-            #     for embeddings in embeddings_by_layer])
             curr_DSE_per_layer = np.array([
-                compute_entropy(cossim_matrix, entropy_type='von Neumann')
-                for cossim_matrix in curr_cossim_matrix_by_layer])
+                diffusion_spectral_entropy(embeddings, gaussian_kernel_sigma=10, t=10)
+                for embeddings in embeddings_by_layer])
 
         if random_seed == 0:
             cossim_matrix_by_layer = [curr_cossim_matrix_by_layer[i][None, ...].clip(-1, 1) for i in range(len(curr_cossim_matrix_by_layer))]
@@ -330,18 +328,21 @@ if __name__ == '__main__':
     for i in range(len(cossim_matrix_by_layer)):
         cossim_matrix_by_layer[i] = cossim_matrix_by_layer[i].mean(axis=0)
 
-
     # Plot and save histograms.
     model_name_cleaned = '-'.join(args.model_id.split('/'))
     plot_similarity_heatmap(
         cossim_matrix_by_layer,
-        save_path=f'../visualization/transformer/{model_name_cleaned}/embedding_cossim_heatmap_{model_name_cleaned}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')
+        save_path=f'../visualization/transformer/{model_name_cleaned}/embedding_cossim_heatmap_{model_name_cleaned}_{args.dataset}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')
 
-    # Save DSE results.
-    npz_DSE = f'../visualization/transformer/{model_name_cleaned}/results_DSE.npz'
+    # Save results.
+    cossim_matrix_by_layer = np.array(cossim_matrix_by_layer)
+    npz_cossim = f'../visualization/transformer/{model_name_cleaned}/results_cossim_{args.dataset}.npz'
+    np.savez(npz_cossim, cossim_matrix_by_layer=cossim_matrix_by_layer)
+
+    npz_DSE = f'../visualization/transformer/{model_name_cleaned}/results_DSE_{args.dataset}.npz'
     np.savez(npz_DSE, DSE_by_layer=DSE_by_layer)
 
-    csv_DSE = f'../visualization/transformer/{model_name_cleaned}/results_DSE.csv'
+    csv_DSE = f'../visualization/transformer/{model_name_cleaned}/results_DSE_{args.dataset}.csv'
     columns = [
         'model_name',
         'first_layer_mean', 'first_layer_std',
@@ -367,15 +368,13 @@ if __name__ == '__main__':
     if args.plot_all:
         plot_similarity_histograms(
             cossim_matrix_by_layer,
-            save_path=f'../visualization/transformer/{model_name_cleaned}/embedding_cossim_histogram_{model_name_cleaned}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')
-
-        # Plot and save metrics (prob density, entropy, etc.).
+            save_path=f'../visualization/transformer/{model_name_cleaned}/embedding_cossim_histogram_{model_name_cleaned}_{args.dataset}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')
         plot_probability(
             cossim_matrix_by_layer,
-            save_path=f'../visualization/transformer/{model_name_cleaned}/embedding_cossim_probability_{model_name_cleaned}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')
+            save_path=f'../visualization/transformer/{model_name_cleaned}/embedding_cossim_probability_{model_name_cleaned}_{args.dataset}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')
         plot_entropy(
             cossim_matrix_by_layer,
-            save_path=f'../visualization/transformer/{model_name_cleaned}/embedding_cossim_entropy_{model_name_cleaned}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')
+            save_path=f'../visualization/transformer/{model_name_cleaned}/embedding_cossim_entropy_{model_name_cleaned}_{args.dataset}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')
         plot_DSE(
             embeddings_by_layer,
-            save_path=f'../visualization/transformer/{model_name_cleaned}/embedding_DSE_{model_name_cleaned}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')
+            save_path=f'../visualization/transformer/{model_name_cleaned}/embedding_DSE_{model_name_cleaned}_{args.dataset}_layers_{config.num_hidden_layers}_heads_{config.num_attention_heads}.png')

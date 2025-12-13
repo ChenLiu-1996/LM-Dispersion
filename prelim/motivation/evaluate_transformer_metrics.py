@@ -5,11 +5,9 @@ import sys
 import numpy as np
 import pandas as pd
 import torch
-from datasets import load_dataset
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 from tqdm import tqdm
 import tempfile
-from nltk.tokenize import word_tokenize
 
 import_dir = '/'.join(os.path.realpath(__file__).split('/')[:-2])
 sys.path.insert(0, import_dir)
