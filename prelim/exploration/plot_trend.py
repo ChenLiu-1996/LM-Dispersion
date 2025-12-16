@@ -56,12 +56,21 @@ def plot_condensation_trend(model_id_list: List[str],
                             save_path: str = None):
 
     plt.rcParams['font.family'] = 'sans-serif'
-    fig = plt.figure(figsize=(10 * (len(model_id_list) + 1), 8))
-    width_scatter = 1.0 if len(model_id_list) < 5 else 0.15 * len(model_id_list)
-    gs = gridspec.GridSpec(1, len(model_id_list) + 2, width_ratios=[1] * len(model_id_list) + [0.05, width_scatter])
+    if paired:
+        num_models_each = len(model_id_list) // 2
+        fig = plt.figure(figsize=(6 * (len(model_id_list) + 1), 16))
+        width_scatter = 1.0 if len(model_id_list) < 5 else 0.25 * len(model_id_list)
+        gs = gridspec.GridSpec(2, num_models_each + 2, width_ratios=[1] * num_models_each + [0.05, width_scatter])
+    else:
+        fig = plt.figure(figsize=(10 * (len(model_id_list) + 1), 8))
+        width_scatter = 1.0 if len(model_id_list) < 5 else 0.15 * len(model_id_list)
+        gs = gridspec.GridSpec(1, len(model_id_list) + 2, width_ratios=[1] * len(model_id_list) + [0.05, width_scatter])
 
     for model_idx in range(len(model_id_list)):
-        ax = fig.add_subplot(gs[0, model_idx])
+        if paired:
+            ax = fig.add_subplot(gs[int(model_idx >= num_models_each), model_idx % num_models_each])
+        else:
+            ax = fig.add_subplot(gs[0, model_idx])
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
 
@@ -81,7 +90,7 @@ def plot_condensation_trend(model_id_list: List[str],
         ax.set_xlabel('Layer Fraction', fontsize=36)
         ax.set_xticks([0, 0.2, 0.4, 0.6, 0.8, 1])
         ax.set_xticklabels([0, 0.2, 0.4, 0.6, 0.8, 1])
-        if model_idx == 0:
+        if model_idx == 0 or (paired and model_idx == num_models_each):
             ax.set_ylabel('Cosine Similarity', fontsize=36)
 
         cbar = fig.colorbar(im, ax=ax)
@@ -131,7 +140,7 @@ def plot_trend_metrics(gs, fig, model_id_list, spearman_corr_list, kendall_tau_l
 
 def plot_trend_metrics_paired(gs, fig, model_id_list, spearman_corr_list, kendall_tau_list):
     assert len(model_id_list) % 2 == 0, 'Paired plotting require even number of models!'
-    ax = fig.add_subplot(gs[0, -1])
+    ax = fig.add_subplot(gs[:, -1])
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     num_models_each = len(model_id_list) // 2
