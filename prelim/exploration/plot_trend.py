@@ -19,26 +19,46 @@ RENAME_MAP = {
     'Qwen-Qwen-1_8B': 'Qwen-1.8B',
     'Qwen-Qwen-7B': 'Qwen-7B',
     'Qwen-Qwen-14B': 'Qwen-14B',
+    'Qwen-Qwen-72B': 'Qwen-72B',
     'Qwen-Qwen2.5-0.5B': 'Qwen2.5-0.5B',
     'Qwen-Qwen2.5-1.5B': 'Qwen2.5-1.5B',
     'Qwen-Qwen2.5-3B': 'Qwen2.5-3B',
     'Qwen-Qwen2.5-7B': 'Qwen2.5-7B',
+    'Qwen-Qwen2.5-14B': 'Qwen2.5-14B',
+    'Qwen-Qwen2.5-32B': 'Qwen2.5-32B',
+    'Qwen-Qwen2.5-72B': 'Qwen2.5-72B',
     'Qwen-Qwen2.5-Math-1.5B': 'Qwen2.5-Math-1.5B',
     'Qwen-Qwen2.5-Math-7B': 'Qwen2.5-Math-7B',
+    'Qwen-Qwen2.5-Math-14B': 'Qwen2.5-Math-14B',
+    'Qwen-Qwen2.5-Math-32B': 'Qwen2.5-Math-32B',
+    'Qwen-Qwen3-0.6B': 'Qwen3-0.6B',
+    'Qwen-Qwen3-1.7B': 'Qwen3-1.7B',
+    'Qwen-Qwen3-4B': 'Qwen3-4B',
+    'Qwen-Qwen3-8B': 'Qwen3-8B',
+    'Qwen-Qwen3-14B': 'Qwen3-14B',
+    'Qwen-Qwen3-32B': 'Qwen3-32B',
     'deepseek-ai-DeepSeek-R1-Distill-Qwen-1.5B': 'DeepSeek-R1-Distill-\nQwen2.5-Math-1.5B',
     'deepseek-ai-DeepSeek-R1-Distill-Qwen-7B': 'DeepSeek-R1-Distill-\nQwen2.5-Math-7B',
+    'deepseek-ai-DeepSeek-R1-Distill-Qwen-14B': 'DeepSeek-R1-Distill-\nQwen2.5-14B',
+    'deepseek-ai-DeepSeek-R1-Distill-Qwen-32B': 'DeepSeek-R1-Distill-\nQwen2.5-32B',
+    'deepseek-ai-DeepSeek-R1-Distill-Llama-8B': 'DeepSeek-R1-Distill-\nLlama-8B',
+    'meta-llama-Llama-3.1-8B': 'Llama-3.1-8B',
+    'meta-llama-Llama-3.2-1B': 'Llama-3.2-1B',
+    'meta-llama-Llama-3.2-3B': 'Llama-3.2-3B',
 }
 
 def plot_condensation_trend(model_id_list: List[str],
                             cossim_matrix_list: List[np.array],
                             spearman_corr_list: List[float],
                             kendall_tau_list: List[float],
+                            paired: bool = False,
                             bins: int = 128,
                             save_path: str = None):
 
     plt.rcParams['font.family'] = 'sans-serif'
     fig = plt.figure(figsize=(10 * (len(model_id_list) + 1), 8))
-    gs = gridspec.GridSpec(1, len(model_id_list) + 2, width_ratios=[1] * len(model_id_list) + [0.05, 0.9])
+    width_scatter = 1.0 if len(model_id_list) < 5 else 0.15 * len(model_id_list)
+    gs = gridspec.GridSpec(1, len(model_id_list) + 2, width_ratios=[1] * len(model_id_list) + [0.05, width_scatter])
 
     for model_idx in range(len(model_id_list)):
         ax = fig.add_subplot(gs[0, model_idx])
@@ -68,29 +88,10 @@ def plot_condensation_trend(model_id_list: List[str],
         cbar.ax.tick_params(axis='both', which='major', labelsize=26)
         cbar.ax.set_title('Probability\nDensity', fontsize=20, pad=20)
 
-    ax = fig.add_subplot(gs[0, -1])
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    colors = plt.cm.Blues(np.linspace(0.3, 0.9, len(model_id_list)))
-    for i in range(len(model_id_list) - 1):
-        ax.plot(np.arange(len(model_id_list))[i : i+2], spearman_corr_list[i : i+2], color=colors[i], linewidth=4)
-    ax.scatter(np.arange(len(model_id_list)), spearman_corr_list, color=colors, s=120)
-    ax.set_ylabel('Spearman Correlation', labelpad=12, fontsize=30, color=colors[-1])
-    ax.set_ylim([-1, 1.02])
-    ax.tick_params(axis='both', which='major', labelsize=26)
-    ax.set_xticks(np.arange(len(model_id_list)))
-    ax.set_xticklabels([RENAME_MAP[model_id] for model_id in model_id_list], fontsize=18, rotation=30, ha='right')
-
-    ax2 = ax.twinx()
-    ax2.spines['top'].set_visible(False)
-    ax2.spines['left'].set_visible(False)
-    colors = plt.cm.Reds(np.linspace(0.3, 0.9, len(model_id_list)))
-    for i in range(len(model_id_list) - 1):
-        ax2.plot(np.arange(len(model_id_list))[i : i+2], kendall_tau_list[i : i+2], color=colors[i], linewidth=4)
-    ax2.scatter(np.arange(len(model_id_list)), kendall_tau_list, color=colors, s=120)
-    ax2.set_ylabel("Kendall's Tau", labelpad=36, fontsize=30, rotation=270, color=colors[-1])
-    ax2.set_ylim([-1, 1.02])
-    ax2.tick_params(axis='both', which='major', labelsize=26)
+    if paired:
+        plot_trend_metrics_paired(gs, fig, model_id_list, spearman_corr_list, kendall_tau_list)
+    else:
+        plot_trend_metrics(gs, fig, model_id_list, spearman_corr_list, kendall_tau_list)
 
     fig.tight_layout(pad=2)
 
@@ -102,11 +103,79 @@ def plot_condensation_trend(model_id_list: List[str],
         plt.show()
     return
 
+def plot_trend_metrics(gs, fig, model_id_list, spearman_corr_list, kendall_tau_list):
+    ax = fig.add_subplot(gs[0, -1])
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    colors = plt.cm.Blues(np.linspace(0.3, 0.9, len(model_id_list)))
+    for i in range(len(model_id_list) - 1):
+        ax.plot(np.arange(len(model_id_list))[i : i+2], spearman_corr_list[i : i+2], color=colors[i], linewidth=4)
+    ax.scatter(np.arange(len(model_id_list)), spearman_corr_list, color=colors, s=120)
+    ax.set_ylabel('Spearman Correlation', labelpad=12, fontsize=30, color=colors[-1])
+    ax.set_ylim([-1, 1.02])
+    ax.tick_params(axis='both', which='major', labelsize=26)
+    ax.set_xticks(np.arange(len(model_id_list)))
+    ax.set_xticklabels([RENAME_MAP[model_id] for model_id in model_id_list], fontsize=18, rotation=40, ha='right')
+
+    ax2 = ax.twinx()
+    ax2.spines['top'].set_visible(False)
+    ax2.spines['left'].set_visible(False)
+    colors = plt.cm.Reds(np.linspace(0.3, 0.9, len(model_id_list)))
+    for i in range(len(model_id_list) - 1):
+        ax2.plot(np.arange(len(model_id_list))[i : i+2], kendall_tau_list[i : i+2], color=colors[i], linewidth=4)
+    ax2.scatter(np.arange(len(model_id_list)), kendall_tau_list, color=colors, s=120)
+    ax2.set_ylabel("Kendall's Tau", labelpad=36, fontsize=30, rotation=270, color=colors[-1])
+    ax2.set_ylim([-1, 1.02])
+    ax2.tick_params(axis='both', which='major', labelsize=26)
+    return ax
+
+def plot_trend_metrics_paired(gs, fig, model_id_list, spearman_corr_list, kendall_tau_list):
+    assert len(model_id_list) % 2 == 0, 'Paired plotting require even number of models!'
+    ax = fig.add_subplot(gs[0, -1])
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    num_models_each = len(model_id_list) // 2
+    colors = plt.cm.Blues(np.linspace(0.3, 0.9, num_models_each))
+    for i in range(num_models_each - 1):
+        ax.plot(np.arange(num_models_each)[i : i+2], spearman_corr_list[i : i+2], color=colors[i], linewidth=4)
+    for i in range(num_models_each - 1):
+        ax.plot(num_models_each + np.arange(num_models_each)[i : i+2],
+                spearman_corr_list[num_models_each + i : num_models_each + i+2], color=colors[i], linewidth=4)
+    for i in range(num_models_each):
+        ax.plot([i, num_models_each + i], [spearman_corr_list[i], spearman_corr_list[num_models_each + i]],
+                color=colors[i], linewidth=2, linestyle='--')
+    ax.scatter(np.arange(num_models_each), spearman_corr_list[:num_models_each], color=colors, s=120)
+    ax.scatter(num_models_each + np.arange(num_models_each), spearman_corr_list[num_models_each:], color=colors, s=120)
+    ax.set_ylabel('Spearman Correlation', labelpad=12, fontsize=30, color=colors[-1])
+    ax.set_ylim([-1, 1.02])
+    ax.tick_params(axis='both', which='major', labelsize=26)
+    ax.set_xticks(np.arange(len(model_id_list)))
+    ax.set_xticklabels([RENAME_MAP[model_id] for model_id in model_id_list], fontsize=18, rotation=40, ha='right')
+
+    ax2 = ax.twinx()
+    ax2.spines['top'].set_visible(False)
+    ax2.spines['left'].set_visible(False)
+    colors = plt.cm.Reds(np.linspace(0.3, 0.9, num_models_each))
+    for i in range(num_models_each - 1):
+        ax2.plot(np.arange(num_models_each)[i : i+2], kendall_tau_list[i : i+2], color=colors[i], linewidth=4)
+    for i in range(num_models_each - 1):
+        ax2.plot(num_models_each + np.arange(num_models_each)[i : i+2],
+                 kendall_tau_list[num_models_each + i : num_models_each + i+2], color=colors[i], linewidth=4)
+    for i in range(num_models_each):
+        ax2.plot([i, num_models_each + i], [kendall_tau_list[i], kendall_tau_list[num_models_each + i]],
+                 color=colors[i], linewidth=2, linestyle='--')
+    ax2.scatter(np.arange(num_models_each), kendall_tau_list[:num_models_each], color=colors, s=120)
+    ax2.scatter(num_models_each + np.arange(num_models_each), kendall_tau_list[num_models_each:], color=colors, s=120)
+    ax2.set_ylabel("Kendall's Tau", labelpad=36, fontsize=30, rotation=270, color=colors[-1])
+    ax2.set_ylim([-1, 1.02])
+    ax2.tick_params(axis='both', which='major', labelsize=26)
+    return ax
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='parameters')
     parser.add_argument('--model-id', type=str, default='albert-base-v2', nargs='+')
     parser.add_argument('--model-family', type=str, default='albert')
+    parser.add_argument('--paired', action='store_true')
     parser.add_argument('--dataset', type=str, default='wikipedia')
     args = parser.parse_args()
 
@@ -129,4 +198,5 @@ if __name__ == '__main__':
                             cossim_matrix_list=cossim_matrix_list,
                             spearman_corr_list=spearman_corr_list,
                             kendall_tau_list=kendall_tau_list,
+                            paired=args.paired,
                             save_path=f'../visualization/transformer/_trend/{args.model_family}.png')
