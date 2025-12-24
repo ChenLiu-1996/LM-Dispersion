@@ -45,6 +45,15 @@ RENAME_MAP = {
     'meta-llama-Llama-3.1-8B': 'Llama-3.1-8B',
     'meta-llama-Llama-3.2-1B': 'Llama-3.2-1B',
     'meta-llama-Llama-3.2-3B': 'Llama-3.2-3B',
+    'allenai-OLMo-2-0425-1B': 'Olmo2-1B',
+    'allenai-OLMo-2-1124-7B': 'Olmo2-7B',
+    'allenai-OLMo-2-1124-13B': 'Olmo2-13B',
+    'allenai-OLMo-2-0325-32B': 'Olmo2-32B',
+    'bigscience-bloom-560m': 'Bloom-0.56B',
+    'bigscience-bloom-1b1': 'Bloom-1.1B',
+    'bigscience-bloom-1b7': 'Bloom-1.7B',
+    'bigscience-bloom-3b': 'Bloom-3B',
+    'bigscience-bloom-7b1': 'Bloom-7.1B',
 }
 
 def plot_condensation_trend(model_id_list: List[str],
@@ -58,19 +67,19 @@ def plot_condensation_trend(model_id_list: List[str],
     plt.rcParams['font.family'] = 'sans-serif'
     if paired:
         num_models_each = len(model_id_list) // 2
-        fig = plt.figure(figsize=(6 * (len(model_id_list) + 1), 16))
-        width_scatter = 1.0 if len(model_id_list) < 5 else 0.25 * len(model_id_list)
-        gs = gridspec.GridSpec(2, num_models_each + 2, width_ratios=[1] * num_models_each + [0.05, width_scatter])
+        width_ratios = [1, 0.05] + [1] * num_models_each
+        fig = plt.figure(figsize=(8.5 * np.sum(width_ratios), 16))
+        gs = gridspec.GridSpec(2, num_models_each + 2, width_ratios=width_ratios)
     else:
-        fig = plt.figure(figsize=(10 * (len(model_id_list) + 1), 8))
-        width_scatter = 1.0 if len(model_id_list) < 5 else 0.15 * len(model_id_list)
-        gs = gridspec.GridSpec(1, len(model_id_list) + 2, width_ratios=[1] * len(model_id_list) + [0.05, width_scatter])
+        width_ratios = [1, 0.05] + [1] * len(model_id_list)
+        fig = plt.figure(figsize=(8.5 * np.sum(width_ratios), 8))
+        gs = gridspec.GridSpec(1, len(model_id_list) + 2, width_ratios=width_ratios)
 
     for model_idx in range(len(model_id_list)):
         if paired:
-            ax = fig.add_subplot(gs[int(model_idx >= num_models_each), model_idx % num_models_each])
+            ax = fig.add_subplot(gs[int(model_idx >= num_models_each), 2 + model_idx % num_models_each])
         else:
-            ax = fig.add_subplot(gs[0, model_idx])
+            ax = fig.add_subplot(gs[0, 2 + model_idx])
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
 
@@ -113,7 +122,7 @@ def plot_condensation_trend(model_id_list: List[str],
     return
 
 def plot_trend_metrics(gs, fig, model_id_list, spearman_corr_list, kendall_tau_list):
-    ax = fig.add_subplot(gs[0, -1])
+    ax = fig.add_subplot(gs[0, 0])
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     colors = plt.cm.Blues(np.linspace(0.3, 0.9, len(model_id_list)))
@@ -140,7 +149,7 @@ def plot_trend_metrics(gs, fig, model_id_list, spearman_corr_list, kendall_tau_l
 
 def plot_trend_metrics_paired(gs, fig, model_id_list, spearman_corr_list, kendall_tau_list):
     assert len(model_id_list) % 2 == 0, 'Paired plotting require even number of models!'
-    ax = fig.add_subplot(gs[:, -1])
+    ax = fig.add_subplot(gs[:, 0])
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     num_models_each = len(model_id_list) // 2
