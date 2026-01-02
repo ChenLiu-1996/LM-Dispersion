@@ -163,7 +163,11 @@ class LMEvalCallback(TrainerCallback):
         local_rank = int(os.environ.get("LOCAL_RANK", "0"))
         world_size = int(os.environ.get("WORLD_SIZE", "1"))
 
+        if world_size > 1 and dist.is_initialized():
+            dist.barrier()
+
         if local_rank == 0:
+            stage_str = f" ({stage})" if stage else ""
             try:
                 # Determine device configuration
                 if torch.cuda.is_available() and world_size > 1:
@@ -177,7 +181,6 @@ class LMEvalCallback(TrainerCallback):
                     # CPU
                     device_str = "cpu"
 
-                stage_str = f" ({stage})" if stage else ""
                 log(f"[LMEval] Running evaluation{stage_str} at step {state.global_step} (world_size={world_size}, device={device_str})...", filepath=self.log_path)
 
                 if hasattr(model, 'module'):
@@ -188,35 +191,37 @@ class LMEvalCallback(TrainerCallback):
                 torch.cuda.empty_cache()
                 gc.collect()
 
-                wrapped_model = HFLM(pretrained=save_model, tokenizer=self.tok, batch_size=1)
+                save_model.eval()
+                with torch.inference_mode():
+                    wrapped_model = HFLM(pretrained=save_model, tokenizer=self.tok, batch_size=1)
 
-                res_zeroshot = simple_evaluate(
-                    model=wrapped_model,
-                    tasks=self.zeroshot_tasks,
-                    num_fewshot=0,
-                    device=device_str,
-                    limit=self.max_eval_samples,
-                    gen_kwargs = {"max_gen_toks": self.max_gen_tokens, "do_sample": False},
-                    log_samples=False,  # Otherwise, will log individual samples in the JSON.
-                    random_seed=args.seed,
-                    numpy_random_seed=args.seed,
-                    torch_random_seed=args.seed,
-                    fewshot_random_seed=args.seed,
-                )
+                    res_zeroshot = simple_evaluate(
+                        model=wrapped_model,
+                        tasks=self.zeroshot_tasks,
+                        num_fewshot=0,
+                        device=device_str,
+                        limit=self.max_eval_samples,
+                        gen_kwargs = {"max_gen_toks": self.max_gen_tokens, "do_sample": False},
+                        log_samples=False,  # Otherwise, will log individual samples in the JSON.
+                        random_seed=args.seed,
+                        numpy_random_seed=args.seed,
+                        torch_random_seed=args.seed,
+                        fewshot_random_seed=args.seed,
+                    )
 
-                res_fewshot = simple_evaluate(
-                    model=wrapped_model,
-                    tasks=self.fewshot_tasks,
-                    num_fewshot=self.num_fewshot,
-                    device=device_str,
-                    limit=self.max_eval_samples,
-                    gen_kwargs = {"max_gen_toks": self.max_gen_tokens, "do_sample": False},
-                    log_samples=False,  # Otherwise, will log individual samples in the JSON.
-                    random_seed=args.seed,
-                    numpy_random_seed=args.seed,
-                    torch_random_seed=args.seed,
-                    fewshot_random_seed=args.seed,
-                )
+                    res_fewshot = simple_evaluate(
+                        model=wrapped_model,
+                        tasks=self.fewshot_tasks,
+                        num_fewshot=self.num_fewshot,
+                        device=device_str,
+                        limit=self.max_eval_samples,
+                        gen_kwargs = {"max_gen_toks": self.max_gen_tokens, "do_sample": False},
+                        log_samples=False,  # Otherwise, will log individual samples in the JSON.
+                        random_seed=args.seed,
+                        numpy_random_seed=args.seed,
+                        torch_random_seed=args.seed,
+                        fewshot_random_seed=args.seed,
+                    )
 
                 assert "results" in res_zeroshot and "results" in res_fewshot
                 filename = f"lm_eval_{stage}_{state.global_step}.json" if stage else f"lm_eval_step{state.global_step}.json"
@@ -244,9 +249,6 @@ class LMEvalCallback(TrainerCallback):
 
             except Exception as e:
                 log(f"[LMEval] Error during evaluation{stage_str} at step {state.global_step}: {e}", filepath=self.log_path)
-
-        if world_size > 1 and dist.is_initialized():
-            dist.barrier()
 
     def on_train_begin(self, args, state, control, **kwargs):
         if self.eval_at_begin and not self.has_run_begin:
@@ -379,10 +381,12 @@ def main(args):
     if hasattr(config, "loss_type"):
         delattr(config, "loss_type")
     model = AutoModelForCausalLM.from_config(config)
+    model.gradient_checkpointing_enable()
 
-    context_len = getattr(model.config, "max_position_embeddings")
-    max_gen_tokens = 1024
-    assert max_gen_tokens <= context_len
+    max_position_embeddings = getattr(model.config, "max_position_embeddings")
+    context_len = 8192
+    max_gen_tokens = 2048
+    assert max_gen_tokens <= context_len and context_len <= max_position_embeddings
     tokenizer.model_max_length = context_len
 
     # vocab_size = len(tokenizer)

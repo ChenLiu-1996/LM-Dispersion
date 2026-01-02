@@ -163,6 +163,9 @@ class LMEvalCallback(TrainerCallback):
         local_rank = int(os.environ.get("LOCAL_RANK", "0"))
         world_size = int(os.environ.get("WORLD_SIZE", "1"))
 
+        if world_size > 1 and dist.is_initialized():
+            dist.barrier()
+
         if local_rank == 0:
             try:
                 # Determine device configuration
@@ -379,6 +382,7 @@ def main(args):
     if hasattr(config, "loss_type"):
         delattr(config, "loss_type")
     model = AutoModelForCausalLM.from_config(config)
+    model.gradient_checkpointing_enable()
 
     max_gen_tokens = getattr(model.config, "task_specific_params")["text-generation"]["max_length"]
     context_len = getattr(model.config, "n_positions",
