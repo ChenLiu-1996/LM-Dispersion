@@ -153,119 +153,106 @@ class LMEvalCallback(TrainerCallback):
         self.has_run_begin = False
 
     def _run_evaluation(self, args, state, model, stage=""):
-        # Only run evaluation on main process in distributed training
         local_rank = int(os.environ.get("LOCAL_RANK", "0"))
-        if local_rank != 0:
-            return
-
-        if args.bf16:
-            dtype = "bfloat16"
-        elif args.fp16:
-            dtype = "float16"
-        else:
-            dtype = "float32"
-
-        # Handle multi-GPU setup
         world_size = int(os.environ.get("WORLD_SIZE", "1"))
+        ddp = (world_size > 1 and dist.is_available() and dist.is_initialized())
 
-        # Determine device configuration
-        if torch.cuda.is_available() and world_size > 1:
-            # Multi-GPU setup - use parallelization in lm_eval
-            device_str = "cuda"
-            model_args = f"pretrained={{tmp}},dtype={dtype},parallelize=True"
-        elif torch.cuda.is_available():
-            # Single GPU
-            device = next(model.parameters()).device
-            device_str = f"cuda:{device.index}" if device.index is not None else "cuda:0"
-            model_args = f"pretrained={{tmp}},dtype={dtype}"
-        else:
-            # CPU
-            device_str = "cpu"
-            model_args = f"pretrained={{tmp}},dtype={dtype}"
+        if ddp:
+            dist.barrier()
 
         try:
-            with tempfile.TemporaryDirectory() as tmp:
+            if local_rank == 0:
                 stage_str = f" ({stage})" if stage else ""
+                # Determine device configuration
+                if torch.cuda.is_available() and world_size > 1:
+                    # Multi-GPU
+                    device_str = "cuda"
+                elif torch.cuda.is_available():
+                    # Single-GPU
+                    device = next(model.parameters()).device
+                    device_str = f"cuda:{device.index}" if device.index is not None else "cuda:0"
+                else:
+                    # CPU
+                    device_str = "cpu"
+
                 log(f"[LMEval] Running evaluation{stage_str} at step {state.global_step} (world_size={world_size}, device={device_str})...", filepath=self.log_path)
 
-                # Save model - handle distributed training
-                if hasattr(model, 'module'):
-                    # Model is wrapped (e.g., DDP, FSDP)
-                    save_model = model.module
-                else:
-                    save_model = model
+                eval_model = model.module if hasattr(model, "module") else model
 
-                # Check if this is a PEFT model (LoRA)
-                is_peft_model = hasattr(save_model, 'peft_config')
-                if is_peft_model:
-                    log(f"[LMEval] Detected PEFT model, merging adapters for evaluation...", filepath=self.log_path)
-                    model_copy = deepcopy(save_model).to("cpu")
-                    merged = model_copy.merge_and_unload()
-                    merged.save_pretrained(tmp)
-                    del model_copy, merged
-                else:
-                    save_model.save_pretrained(tmp)
+                was_training = eval_model.training
+                eval_model.eval()
 
-                self.tok.save_pretrained(tmp)
+                try:
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()
+                        torch.cuda.empty_cache()
+                    gc.collect()
 
-                res_zeroshot = simple_evaluate(
-                    model="hf",
-                    model_args=model_args.format(tmp=tmp),
-                    tasks=self.zeroshot_tasks,
-                    num_fewshot=0,
-                    batch_size="auto",
-                    device=device_str,
-                    limit=self.max_eval_samples,
-                    gen_kwargs = {"max_gen_toks": self.max_gen_tokens},
-                    log_samples=False,  # Otherwise, will log individual samples in the JSON.
-                    random_seed=args.seed,
-                    numpy_random_seed=args.seed,
-                    torch_random_seed=args.seed,
-                    fewshot_random_seed=args.seed,
-                )
+                    with torch.inference_mode():
+                        wrapped_model = HFLM(pretrained=eval_model, tokenizer=self.tok, batch_size=1)
 
-                res_fewshot = simple_evaluate(
-                    model="hf",
-                    model_args=model_args.format(tmp=tmp),
-                    tasks=self.fewshot_tasks,
-                    num_fewshot=self.num_fewshot,
-                    batch_size="auto",
-                    device=device_str,
-                    limit=self.max_eval_samples,
-                    gen_kwargs = {"max_gen_toks": self.max_gen_tokens},
-                    log_samples=False,  # Otherwise, will log individual samples in the JSON.
-                    random_seed=args.seed,
-                    numpy_random_seed=args.seed,
-                    torch_random_seed=args.seed,
-                    fewshot_random_seed=args.seed,
-                )
+                        res_zeroshot = simple_evaluate(
+                            model=wrapped_model,
+                            tasks=self.zeroshot_tasks,
+                            num_fewshot=0,
+                            device=device_str,
+                            limit=self.max_eval_samples,
+                            gen_kwargs = {"max_gen_toks": self.max_gen_tokens, "do_sample": False},
+                            log_samples=False,  # Otherwise, will log individual samples in the JSON.
+                            random_seed=args.seed,
+                            numpy_random_seed=args.seed,
+                            torch_random_seed=args.seed,
+                            fewshot_random_seed=args.seed,
+                        )
 
-                assert "results" in res_zeroshot and "results" in res_fewshot
-                filename = f"lm_eval_{stage}_{state.global_step}.json" if stage else f"lm_eval_step{state.global_step}.json"
-                out = os.path.join(args.output_dir, filename)
-                merged_dict = {**res_zeroshot["results"], **res_fewshot["results"]}
-                with open(out, "w") as f:
-                    json.dump({"results": merged_dict}, f, indent=2)
-                log(f"[LMEval] Results saved to {out}", filepath=self.log_path)
+                        res_fewshot = simple_evaluate(
+                            model=wrapped_model,
+                            tasks=self.fewshot_tasks,
+                            num_fewshot=self.num_fewshot,
+                            device=device_str,
+                            limit=self.max_eval_samples,
+                            gen_kwargs = {"max_gen_toks": self.max_gen_tokens, "do_sample": False},
+                            log_samples=False,  # Otherwise, will log individual samples in the JSON.
+                            random_seed=args.seed,
+                            numpy_random_seed=args.seed,
+                            torch_random_seed=args.seed,
+                            fewshot_random_seed=args.seed,
+                        )
 
-                for task, metrics in merged_dict.items():
-                    if isinstance(metrics, dict):
-                        for metric_name, value in metrics.items():
-                            if isinstance(value, (int, float)):
-                                log(f"[LMEval] {task}.{metric_name}: {value:.4f}", filepath=self.log_path)
+                    assert "results" in res_zeroshot and "results" in res_fewshot
+                    filename = f"lm_eval_{stage}_{state.global_step}.json" if stage else f"lm_eval_step{state.global_step}.json"
+                    out = os.path.join(args.output_dir, filename)
+                    merged_dict = {**res_zeroshot["results"], **res_fewshot["results"]}
+                    with open(out, "w") as f:
+                        json.dump({"results": merged_dict}, f, indent=2)
+                    log(f"[LMEval] Results saved to {out}", filepath=self.log_path)
 
-                if self.save_on_eval:
-                    ckpt_dir = os.path.join(args.output_dir, f"eval_ckpt_{stage or 'interval'}_step{state.global_step}")
-                    os.makedirs(ckpt_dir, exist_ok=True)
-                    if hasattr(model, 'module'):
-                        model.module.save_pretrained(ckpt_dir, save_safetensors=getattr(args, "save_safetensors", True))
-                    else:
-                        model.save_pretrained(ckpt_dir, save_safetensors=getattr(args, "save_safetensors", True))
-                    self.tok.save_pretrained(ckpt_dir)
-                    log(f"[LMEval] Weights saved to {ckpt_dir}", filepath=self.log_path)
+                    for task, metrics in merged_dict.items():
+                        if isinstance(metrics, dict):
+                            for metric_name, value in metrics.items():
+                                if isinstance(value, (int, float)):
+                                    log(f"[LMEval] {task}.{metric_name}: {value:.4f}", filepath=self.log_path)
 
-        except Exception as e:
-            log(f"[LMEval] Error during evaluation{stage_str} at step {state.global_step}: {e}", filepath=self.log_path)
+                    if self.save_on_eval:
+                        ckpt_dir = os.path.join(args.output_dir, f"eval_ckpt_{stage or 'interval'}_step{state.global_step}")
+                        os.makedirs(ckpt_dir, exist_ok=True)
+                        if hasattr(model, 'module'):
+                            model.module.save_pretrained(ckpt_dir, save_safetensors=getattr(args, "save_safetensors", True))
+                        else:
+                            model.save_pretrained(ckpt_dir, save_safetensors=getattr(args, "save_safetensors", True))
+                        self.tok.save_pretrained(ckpt_dir)
+                        log(f"[LMEval] Weights saved to {ckpt_dir}", filepath=self.log_path)
+
+                except Exception as e:
+                    log(f"[LMEval] Error during evaluation{stage_str} at step {state.global_step}: {e}", filepath=self.log_path)
+
+                finally:
+                    if was_training:
+                        eval_model.train()
+
+        finally:
+            if ddp:
+                dist.barrier()
 
     def on_train_begin(self, args, state, control, **kwargs):
         if self.eval_at_begin and not self.has_run_begin:
@@ -390,26 +377,27 @@ def main(args):
     if args.hf_token:
         os.environ["HF_TOKEN"] = args.hf_token
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name, use_auth_token=args.hf_token, cache_dir=args.cache_dir)
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name, token=args.hf_token, cache_dir=args.cache_dir)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    config = AutoConfig.from_pretrained(args.model_name, use_auth_token=args.hf_token, cache_dir=args.cache_dir)
+    config = AutoConfig.from_pretrained(args.model_name, token=args.hf_token, cache_dir=args.cache_dir)
     if hasattr(config, "loss_type"):
         delattr(config, "loss_type")
-    model = AutoModelForCausalLM.from_pretrained(args.model_name, config=config, use_auth_token=args.hf_token, cache_dir=args.cache_dir)
+    model = AutoModelForCausalLM.from_config(config)
+    model.gradient_checkpointing_enable()
 
     max_gen_tokens = getattr(model.config, "task_specific_params")["text-generation"]["max_length"]
     context_len = getattr(model.config, "n_positions",
-              getattr(model.config, "max_position_embeddings",
-              getattr(model.config, "max_sequence_length", 1024)))
+                          getattr(model.config, "max_position_embeddings",
+                                  getattr(model.config, "max_sequence_length", 1024)))
     tokenizer.model_max_length = context_len
 
-    vocab_size = len(tokenizer)
-    model.resize_token_embeddings(vocab_size)
-    model.config.vocab_size = vocab_size
-    if hasattr(model, "base_model") and hasattr(model.base_model, "config"):
-        model.base_model.config.vocab_size = vocab_size
+    # vocab_size = len(tokenizer)
+    # model.resize_token_embeddings(vocab_size)
+    # model.config.vocab_size = vocab_size
+    # if hasattr(model, "base_model") and hasattr(model.base_model, "config"):
+    #     model.base_model.config.vocab_size = vocab_size
 
     if args.lora:
         log("Applying LoRA configuration...", filepath=args.log_path)
@@ -454,10 +442,14 @@ def main(args):
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         learning_rate=learning_rate,
         weight_decay=0.1,
-        warmup_ratio=0,
+        adam_beta1=0.9,
+        adam_beta2=0.95,
+        adam_epsilon=1e-8,
+        max_grad_norm=1.0,
+        warmup_steps=0,
         max_steps=max_steps,
         optim="adamw_torch",
-        lr_scheduler_type="constant",
+        lr_scheduler_type="cosine",
         log_level="info",
         logging_steps=max(1, max_steps // 20),
         log_on_each_node=False,
@@ -505,13 +497,16 @@ def main(args):
         "openbookqa",
         "paloma_wikitext_103",
         "piqa",
+        "squad_completion",
         "truthfulqa_mc2",
         "winogrande",
     ]
     fewshot_tasks = [
         "arc_challenge",
         "arc_easy",
+        "drop",
         "gsm8k",
+        "mathqa",
         "mmlu",
         "mmlu_pro",
         "medmcqa",
