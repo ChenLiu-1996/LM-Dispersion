@@ -1,13 +1,14 @@
 from typing import List
 import os
+import gc
 import sys
 import json
-import tempfile
 import math
 import argparse
-from copy import deepcopy
 import torch
+import torch.distributed as dist
 from lm_eval import simple_evaluate
+from lm_eval.models.huggingface import HFLM
 from datasets import load_dataset, concatenate_datasets
 from transformers import (
     AutoTokenizer,
