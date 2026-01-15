@@ -447,7 +447,7 @@ def main(args):
         adam_beta2=0.95,
         adam_epsilon=1e-8,
         max_grad_norm=1.0,
-        warmup_steps=0,
+        warmup_steps=int(0.05 * max_steps),
         max_steps=max_steps,
         optim="adamw_torch",
         lr_scheduler_type="cosine",
@@ -509,7 +509,7 @@ def main(args):
         "gsm8k",
         "mathqa",
         "mmlu",
-        "mmlu_pro",
+        # "mmlu_pro",  # MMLU-Pro is too slow.
         "medmcqa",
     ]
     trainer.add_callback(LMEvalCallback(tokenizer,
