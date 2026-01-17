@@ -450,8 +450,7 @@ def main(args):
         warmup_steps=0,
         max_steps=max_steps,
         optim="adamw_torch",
-        lr_scheduler_type="cosine_with_min_lr",
-        lr_scheduler_kwargs={"min_lr": 0.1 * learning_rate},
+        lr_scheduler_type="constant",
         log_level="info",
         logging_steps=max(1, max_steps // 20),
         log_on_each_node=False,
@@ -499,15 +498,15 @@ def main(args):
         "openbookqa",
         "paloma_wikitext_103",
         "piqa",
-        "squad_completion",
+        # "squad_completion",
         "truthfulqa_mc2",
         "winogrande",
     ]
     fewshot_tasks = [
         "arc_challenge",
         "arc_easy",
-        "drop",
-        "gsm8k",
+        # "drop",
+        # "gsm8k",
         "mathqa",
         "mmlu",
         # "mmlu_pro",  # MMLU-Pro is too slow.
@@ -550,7 +549,7 @@ if __name__ == "__main__":
     ap.add_argument("--tau_l2", type=float, default=0.5, help="Temperature.")
     ap.add_argument("--tau_cos", type=float, default=0.5, help="Temperature.")
     ap.add_argument("--num_fewshot", type=int, default=1, help="Eval num_fewshot.")
-    ap.add_argument("--max_eval_samples", type=int, default=200, help="Eval max_eval_samples.")
+    ap.add_argument("--max_eval_samples", type=int, default=500, help="Eval max_eval_samples.")
     ap.add_argument("--num_ckpt", type=int, default=10, help="Number of checkpoints.")
     ap.add_argument("--no_save_model", action="store_true")
     ap.add_argument("--num_workers", type=int, default=8, help="Number of dataloader workers.")
