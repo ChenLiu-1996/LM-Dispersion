@@ -529,7 +529,7 @@ def main(args):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Mid-train Qwen3 with a token budget.")
-    ap.add_argument("--model_name", type=str, default="qwen3",
+    ap.add_argument("--model_name", type=str, default="Qwen/Qwen3-0.6B",
                     help="Hugging Face model id to start from (pretrained).")
     ap.add_argument("--lora", action="store_true", help="Use LoRA (Low-Rank Adaptation) instead of full fine-tuning")
     ap.add_argument("--cache_dir", type=str, default='./.cache/')
@@ -553,8 +553,8 @@ if __name__ == "__main__":
     ap.add_argument("--num_ckpt", type=int, default=10, help="Number of checkpoints.")
     ap.add_argument("--no_save_model", action="store_true")
     ap.add_argument("--num_workers", type=int, default=8, help="Number of dataloader workers.")
-    ap.add_argument("--per_device_train_batch_size", type=int, default=16)
-    ap.add_argument("--gradient_accumulation_steps", type=int, default=8)
+    ap.add_argument("--per_device_train_batch_size", type=int, default=2)
+    ap.add_argument("--gradient_accumulation_steps", type=int, default=32)
     ap.add_argument("--seed", type=int, default=1)
 
     args = ap.parse_args()
