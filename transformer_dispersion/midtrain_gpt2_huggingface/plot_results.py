@@ -297,7 +297,7 @@ def main(args):
 
     os.makedirs(os.path.dirname(figure_lines_save_path), exist_ok=True)
     os.makedirs(os.path.dirname(figure_bars_save_path), exist_ok=True)
-    run_folder_list = sorted(glob(os.path.join(result_folder, f'midtrain_{args.model_name}{lora_suffix}_{"-".join(args.dataset_name.split("/"))}_*')))
+    run_folder_list = sorted(glob(os.path.join(result_folder, f'midtrain_{args.model_name}{lora_suffix}_{"-".join(args.dataset_name.split("/"))}_*seed-1*')))
 
     # Ignore the folder if the folder does not contain any `lm_eval_*.json` files.
     run_folder_list = [run_folder for run_folder in run_folder_list if len(glob(os.path.join(run_folder, 'lm_eval_*.json'))) > 0]
@@ -305,7 +305,7 @@ def main(args):
     for run_folder in run_folder_list:
         dispersion_name = run_folder.split('disp-')[1].split('-')[0]
         dispersion_coefficient = run_folder.split(f'{dispersion_name}-')[1].split('-')[0]
-        dispersion_location = run_folder.split(f'{dispersion_coefficient}-')[1].split('_')[0]
+        dispersion_location = run_folder.split(f'{dispersion_coefficient}-')[1].split('-')[0]
 
         if float(dispersion_coefficient) > 1:
             continue

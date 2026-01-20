@@ -81,11 +81,11 @@ def compute_precision_flags():
     else:
         return True, False
 
-def make_splits(dataset_name, dataset_config, hf_token, tokenizer, context_len, seed):
+def make_splits(dataset_name, dataset_config, cache_dir, hf_token, tokenizer, context_len, seed):
     if dataset_config is None or str(dataset_config).strip() == "":
-        ds = load_dataset(dataset_name, streaming=False, token=hf_token, cache_dir=args.cache_dir)
+        ds = load_dataset(dataset_name, streaming=False, token=hf_token, cache_dir=cache_dir)
     else:
-        ds = load_dataset(dataset_name, dataset_config, streaming=False, token=hf_token, cache_dir=args.cache_dir)
+        ds = load_dataset(dataset_name, dataset_config, streaming=False, token=hf_token, cache_dir=cache_dir)
 
     if "train" in ds:
         ds_train = ds["train"]
@@ -379,13 +379,15 @@ def main(args):
         os.environ["HF_TOKEN"] = args.hf_token
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name, token=args.hf_token, cache_dir=args.cache_dir)
+    tokenizer.padding_side = "right"  # During (batched) training, pad to the right.
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.pad_token_id = tokenizer.eos_token_id
 
     config = AutoConfig.from_pretrained(args.model_name, token=args.hf_token, cache_dir=args.cache_dir)
     if hasattr(config, "loss_type"):
         delattr(config, "loss_type")
-    model = AutoModelForCausalLM.from_pretrained(args.model_name, config=config)
+    model = AutoModelForCausalLM.from_pretrained(args.model_name, config=config, token=args.hf_token, cache_dir=args.cache_dir)
     model.gradient_checkpointing_enable()
 
     max_gen_tokens = getattr(model.config, "task_specific_params")["text-generation"]["max_length"]
@@ -419,6 +421,7 @@ def main(args):
     lm_train, lm_val = make_splits(
         dataset_name=args.dataset_name,
         dataset_config=args.dataset_config,
+        cache_dir=args.cache_dir,
         hf_token=args.hf_token,
         tokenizer=tokenizer,
         context_len=context_len,
@@ -442,9 +445,7 @@ def main(args):
         per_device_train_batch_size=args.per_device_train_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         learning_rate=learning_rate,
-        weight_decay=0.1,
-        adam_beta1=0.9,
-        adam_beta2=0.95,
+        weight_decay=0.01,
         adam_epsilon=1e-8,
         max_grad_norm=1.0,
         warmup_steps=0,
