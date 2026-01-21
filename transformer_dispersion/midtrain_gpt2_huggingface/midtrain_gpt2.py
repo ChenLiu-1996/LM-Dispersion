@@ -392,7 +392,7 @@ def main(args):
 
     max_position_embeddings = getattr(model.config, "max_position_embeddings")
     context_len = 1024
-    max_gen_tokens = 64
+    max_gen_tokens = 256
     assert max_gen_tokens <= context_len and context_len <= max_position_embeddings
     tokenizer.model_max_length = context_len
 
@@ -555,7 +555,7 @@ if __name__ == "__main__":
     ap.add_argument("--no_save_model", action="store_true")
     ap.add_argument("--num_workers", type=int, default=8, help="Number of dataloader workers.")
     ap.add_argument("--per_device_train_batch_size", type=int, default=16)
-    ap.add_argument("--gradient_accumulation_steps", type=int, default=8)
+    ap.add_argument("--gradient_accumulation_steps", type=int, default=4)
     ap.add_argument("--seed", type=int, default=1)
 
     args = ap.parse_args()
