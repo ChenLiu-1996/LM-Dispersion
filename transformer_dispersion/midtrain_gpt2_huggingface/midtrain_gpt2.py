@@ -390,10 +390,10 @@ def main(args):
     model = AutoModelForCausalLM.from_pretrained(args.model_name, config=config, token=args.hf_token, cache_dir=args.cache_dir)
     model.gradient_checkpointing_enable()
 
-    max_gen_tokens = getattr(model.config, "task_specific_params")["text-generation"]["max_length"]
-    context_len = getattr(model.config, "n_positions",
-                          getattr(model.config, "max_position_embeddings",
-                                  getattr(model.config, "max_sequence_length", 1024)))
+    max_position_embeddings = getattr(model.config, "max_position_embeddings")
+    context_len = 1024
+    max_gen_tokens = 64
+    assert max_gen_tokens <= context_len and context_len <= max_position_embeddings
     tokenizer.model_max_length = context_len
 
     # vocab_size = len(tokenizer)
@@ -451,7 +451,7 @@ def main(args):
         warmup_steps=0,
         max_steps=max_steps,
         optim="adamw_torch",
-        lr_scheduler_type="constant",
+        lr_scheduler_type="cosine",
         log_level="info",
         logging_steps=max(1, max_steps // 20),
         log_on_each_node=False,
