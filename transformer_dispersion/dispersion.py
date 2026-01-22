@@ -59,23 +59,27 @@ class DispersionLoss(torch.nn.Module):
             # Norm regularization to prevent blowing up L2 distance too much.
             norm_regularization = (z ** 2).mean() * 1e-1
             # NOTE: log-sum-exp trick for `log(mean(exp(logit)))`, only differ by a constant: -log(logit.size(0))
-            return torch.logsumexp(logit + self.epsilon, dim=(1, 2)).mean() + norm_regularization
+            constant_diff = torch.log(torch.tensor(L**2))
+            return (torch.logsumexp(logit + self.epsilon, dim=(1, 2)) - constant_diff).mean() + norm_regularization
 
         elif self.variant == "angular_spread":
             # NOTE: The distance matrix matrix `D` has shape [B, L, L].
-            z_norm = z / torch.linalg.norm(z, dim=2, keepdim=True)
+            z_norm = z / (torch.linalg.norm(z, dim=2, keepdim=True) + self.epsilon)
             cossim = z_norm @ rearrange(z_norm, 'b l f -> b f l')
-            D = torch.arccos(torch.clamp(cossim, self.epsilon, 1 - self.epsilon)) / torch.pi
+            cossim = torch.clamp(cossim, -1 + self.epsilon, 1 - self.epsilon)
+            D = torch.arccos(cossim) / torch.pi
             non_diag = ~torch.eye(L, dtype=torch.bool, device=z.device)
             logit = -D[:, non_diag] / self.tau_cos
             # NOTE: log-sum-exp trick for `log(mean(exp(logit)))`, only differ by a constant: -log(logit.size(0))
-            return torch.logsumexp(logit + self.epsilon, dim=1).mean()
+            constant_diff = torch.log(torch.tensor(L * (L - 1)))
+            return (torch.logsumexp(logit + self.epsilon, dim=1) - constant_diff).mean()
 
         elif self.variant == 'orthogonalization':
             # NOTE: The distance matrix matrix `D` has shape [B, L, L].
-            z_norm = z / torch.linalg.norm(z, dim=2, keepdim=True)
+            z_norm = z / (torch.linalg.norm(z, dim=2, keepdim=True) + self.epsilon)
             cossim = z_norm @ rearrange(z_norm, 'b l f -> b f l')
-            D = torch.arccos(torch.clamp(cossim, self.epsilon, 1 - self.epsilon)) / torch.pi
+            cossim = torch.clamp(cossim, -1 + self.epsilon, 1 - self.epsilon)
+            D = torch.arccos(cossim) / torch.pi
             non_diag = ~torch.eye(L, dtype=torch.bool, device=z.device)
             diff = torch.clamp(self.margin - D, min=0.0)
             return diff.pow(2)[:, non_diag].mean()
