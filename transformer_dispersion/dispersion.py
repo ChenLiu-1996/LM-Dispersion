@@ -58,7 +58,7 @@ class DispersionLoss(torch.nn.Module):
             logit = -D / self.tau_l2
             # Norm regularization to prevent blowing up L2 distance too much.
             norm_regularization = (z ** 2).mean() * 1e-1
-            # NOTE: log-sum-exp trick for `log(mean(exp(logit)))`, only differ by a constant: -log(logit.size(0))
+            # NOTE: log-sum-exp trick for `log(mean(exp(logit)))`, only differ by a constant: -log(logit.size(1))
             constant_diff = torch.log(torch.tensor(L**2))
             return (torch.logsumexp(logit + self.epsilon, dim=(1, 2)) - constant_diff).mean() + norm_regularization
 
@@ -70,7 +70,7 @@ class DispersionLoss(torch.nn.Module):
             D = torch.arccos(cossim) / torch.pi
             non_diag = ~torch.eye(L, dtype=torch.bool, device=z.device)
             logit = -D[:, non_diag] / self.tau_cos
-            # NOTE: log-sum-exp trick for `log(mean(exp(logit)))`, only differ by a constant: -log(logit.size(0))
+            # NOTE: log-sum-exp trick for `log(mean(exp(logit)))`, only differ by a constant: -log(logit.size(1))
             constant_diff = torch.log(torch.tensor(L * (L - 1)))
             return (torch.logsumexp(logit + self.epsilon, dim=1) - constant_diff).mean()
 
