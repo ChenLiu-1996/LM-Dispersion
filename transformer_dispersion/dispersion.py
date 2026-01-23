@@ -18,8 +18,8 @@ class DispersionLoss(torch.nn.Module):
     '''
     def __init__(self,
                  variant: Literal["decorrelation", "l2_repel", "angular_spread", "orthogonalization", "perplexity_entropy"] = "angular_spread",
-                 tau_l2: float = 0.5,
-                 tau_cos: float = 0.5,
+                 tau_l2: float = 1.0,
+                 tau_cos: float = 1.0,
                  margin: float = 0.5,  # NOTE: 0.5 angular cosine distance = orthogonal.
                  epsilon: float = 1e-4):
         super().__init__()
