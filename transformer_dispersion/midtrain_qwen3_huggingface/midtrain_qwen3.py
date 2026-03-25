@@ -384,6 +384,16 @@ def main(args):
     if args.hf_token:
         os.environ["HF_TOKEN"] = args.hf_token
 
+    out_dir = args.output_dir
+    if os.path.isdir(out_dir) and any(
+        name.startswith("lm_eval_") and name.endswith(".json") for name in os.listdir(out_dir)
+    ):
+        log(
+            f"Skipping training: {out_dir} already exists with lm_eval_*.json results.",
+            filepath=args.log_path,
+        )
+        return
+
     tokenizer = AutoTokenizer.from_pretrained(args.model_name, token=args.hf_token, cache_dir=args.cache_dir)
     tokenizer.padding_side = "right"  # During (batched) training, pad to the right.
     if tokenizer.pad_token is None:
