@@ -311,6 +311,7 @@ class CustomLossTrainer(Trainer):
                  dispersion_loc: str,
                  tau_l2: float,
                  tau_cos: float,
+                 clamp_threshold: float,
                  **kwargs):
         super().__init__(*args, **kwargs)
         self.loss_fn = loss_fn
@@ -323,7 +324,8 @@ class CustomLossTrainer(Trainer):
             variant = dispersion.lower()
             self.disp_loss_fn = DispersionLoss(variant=variant,
                                                tau_l2=tau_l2,
-                                               tau_cos=tau_cos)
+                                               tau_cos=tau_cos,
+                                               clamp_threshold=clamp_threshold)
 
     def disperse_hidden_states(self, hidden_states: List[torch.Tensor]) -> torch.Tensor:
         '''
@@ -500,6 +502,7 @@ def main(args):
         dispersion_loc=args.dispersion_loc,
         tau_cos=args.tau_cos,
         tau_l2=args.tau_l2,
+        clamp_threshold=args.clamp_threshold,
         train_dataset=lm_train,
         eval_dataset=lm_val,
         processing_class=tokenizer,
@@ -594,6 +597,7 @@ if __name__ == "__main__":
     ap.add_argument("--dispersion_loc", type=str, default="all", choices=["all", "last", "early_half", "late_half"])
     ap.add_argument("--tau_l2", type=float, default=1.0, help="Temperature.")
     ap.add_argument("--tau_cos", type=float, default=1.0, help="Temperature.")
+    ap.add_argument("--clamp_threshold", type=float, default=0.1, help="Clamp threshold.")
     ap.add_argument("--num_fewshot", type=int, default=1, help="Eval num_fewshot.")
     ap.add_argument("--max_eval_samples", type=int, default=500, help="Eval max_eval_samples.")
     ap.add_argument("--num_ckpt", type=int, default=5, help="Number of checkpoints.")

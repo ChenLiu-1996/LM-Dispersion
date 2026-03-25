@@ -64,7 +64,7 @@ def parse_run_folder_basename(basename):
     Parse result folder basename into (method_name, coeff_str, loc_str) aligned with format_run_label.
 
     - midtrain_gpt2.py: ..._disp-{name}-{coeff}-{loc}-tau_cos-...
-    - midtrain_gpt2_other_counter_condensation.py: ..._ccnoise-{std}_fewshot-... or ..._ccforget-{K}_fewshot-...
+    - midtrain_gpt2_other_counter_condensation.py: ..._ccnoise-{neftune_alpha}_fewshot-... or ..._ccforget-{K}_fewshot-...
     """
     if "_ccnoise-" in basename:
         coeff = basename.split("_ccnoise-")[1].split("_")[0]
@@ -241,7 +241,7 @@ def value_at_index_percentage(results_storage, sorted_cache, run_index, metric_n
     return np.nan if not np.isfinite(m) else (m * 100.0)
 
 def value_at_index_std_percentage(results_storage, sorted_cache, run_index, metric_name, step_index, use_initial=False):
-    """Across-seed std at the given step index, in percentage points (scale ×100)."""
+    """Across-seed std at the given step index, in percentage points (scale * 100)."""
     _ = results_storage
     _, s = _raw_mean_std_at_merged_index(sorted_cache, run_index, metric_name, step_index, use_initial)
     if not np.isfinite(s):
@@ -357,7 +357,7 @@ def average_scalar_at_step_from_seed_curves(steps_arr, mean_arr, std_arr, step_t
     return m, (0.0 if not np.isfinite(s) else s)
 
 def extend_ylim_candidates_from_band(candidate_list, mean_arr, std_arr):
-    """Append mean, mean+std, mean−std (finite only) to a list used for axis y-limits."""
+    """Append mean, mean+std, mean-std (finite only) to a list used for axis y-limits."""
     m = np.asarray(mean_arr, dtype=float)
     s = np.asarray(std_arr, dtype=float)
     finite = np.isfinite(m)
@@ -367,15 +367,22 @@ def extend_ylim_candidates_from_band(candidate_list, mean_arr, std_arr):
     candidate_list.extend((m + s)[finite].ravel().tolist())
     candidate_list.extend((m - s)[finite].ravel().tolist())
 
-def _latex_metric_cell_mean_and_delta(value, baseline_value, decimals):
-    """Mean score with optional green/red delta vs baseline (for LaTeX body cells)."""
-    cell = f"{value:.{decimals}f}"
-    if np.isfinite(baseline_value):
-        difference = np.round(value, decimals) - np.round(baseline_value, decimals)
-        sign = "+" if difference >= 0 else ""
-        color_name = "forestgreen" if difference >= 0 else "crimson"
-        cell += f"$_{{\\textcolor{{{color_name}}}{{({sign}{difference:.{decimals}f})}}}}$"
-    return cell
+def _latex_cell_mean_pm_std(value, std, decimals):
+    """First table row: mean score ± std."""
+    if not np.isfinite(value):
+        return "N/A"
+    s = float(std) if np.isfinite(std) else 0.0
+    return f"{value:.{decimals}f} $\\pm$ {s:.{decimals}f}"
+
+
+def _latex_cell_delta_colored(value, baseline_value, decimals):
+    """Second table row: improvement vs baseline only (green/red), no subscript or parentheses."""
+    if not np.isfinite(value) or not np.isfinite(baseline_value):
+        return "---"
+    difference = np.round(value, decimals) - np.round(baseline_value, decimals)
+    sign = "+" if difference >= 0 else ""
+    color_name = "forestgreen" if difference >= 0 else "crimson"
+    return f"\\small \\textcolor{{{color_name}}}{{{sign}{difference:.{decimals}f}}}"
 
 def per_seed_avg_metrics_then_mean_std_across_seeds(
     results_storage,
@@ -471,8 +478,6 @@ def render_latex_table(
         for metric_name in metric_names_for_table:
             if row["src"] == ("baseline", "initial"):
                 value = baseline_reference_values[metric_name]
-                baseline_value = baseline_reference_values[metric_name]
-                cell_text = f"{value:.{decimals}f}" if np.isfinite(value) else "N/A"
                 std_pct = value_at_index_std_percentage(
                     results_storage, sorted_cache, baseline_run_index, metric_name,
                     step_index=None, use_initial=True,
@@ -484,7 +489,6 @@ def render_latex_table(
                     step_index=baseline_best_index, use_initial=False,
                 )
                 baseline_value = baseline_reference_values[metric_name]
-                cell_text = _latex_metric_cell_mean_and_delta(value, baseline_value, decimals)
                 std_pct = value_at_index_std_percentage(
                     results_storage, sorted_cache, baseline_run_index, metric_name,
                     step_index=baseline_best_index, use_initial=False,
@@ -497,18 +501,18 @@ def render_latex_table(
                     step_index=best_index, use_initial=False,
                 )
                 baseline_value = baseline_reference_values[metric_name]
-                cell_text = _latex_metric_cell_mean_and_delta(value, baseline_value, decimals)
                 std_pct = value_at_index_std_percentage(
                     results_storage, sorted_cache, run_index, metric_name,
                     step_index=best_index, use_initial=False,
                 )
 
-            metric_cells_line1.append(cell_text)
+            metric_cells_line1.append(_latex_cell_mean_pm_std(value, std_pct, decimals))
             if not np.isfinite(value):
                 metric_cells_line2.append("N/A")
+            elif row["src"] == ("baseline", "initial"):
+                metric_cells_line2.append("---")
             else:
-                sp = float(std_pct) if np.isfinite(std_pct) else 0.0
-                metric_cells_line2.append(f"{value:.{decimals}f} $\\pm$ {sp:.{decimals}f}")
+                metric_cells_line2.append(_latex_cell_delta_colored(value, baseline_value, decimals))
 
         if row["src"] == ("baseline", "initial"):
             mean_A, std_A = baseline_mean_A_initial, baseline_std_A_initial
@@ -534,20 +538,19 @@ def render_latex_table(
                 use_initial=False,
             )
 
-        if np.isfinite(mean_A):
-            if row["src"] == ("baseline", "initial") or not np.isfinite(baseline_mean_A_initial):
-                average_cell_line1 = f"{mean_A:.{decimals_average}f}"
-            else:
-                average_cell_line1 = _latex_metric_cell_mean_and_delta(mean_A, baseline_mean_A_initial, decimals_average)
+        if np.isfinite(mean_A) and np.isfinite(std_A):
+            average_cell_line1 = f"{mean_A:.{decimals_average}f} $\\pm$ {std_A:.{decimals_average}f}"
+        elif np.isfinite(mean_A):
+            average_cell_line1 = f"{mean_A:.{decimals_average}f} $\\pm$ {0.0:.{decimals_average}f}"
         else:
             average_cell_line1 = "N/A"
 
-        if np.isfinite(mean_A) and np.isfinite(std_A):
-            average_cell_line2 = f"{mean_A:.{decimals_average}f} $\\pm$ {std_A:.{decimals_average}f}"
-        elif np.isfinite(mean_A):
-            average_cell_line2 = f"{mean_A:.{decimals_average}f} $\\pm$ {0.0:.{decimals_average}f}"
-        else:
+        if not np.isfinite(mean_A):
             average_cell_line2 = "N/A"
+        elif row["src"] == ("baseline", "initial"):
+            average_cell_line2 = "---"
+        else:
+            average_cell_line2 = _latex_cell_delta_colored(mean_A, baseline_mean_A_initial, decimals_average)
         metric_cells_line1.append(average_cell_line1)
         metric_cells_line2.append(average_cell_line2)
         lines.append(left_cells + " & " + " & ".join(metric_cells_line1) + r" \\")

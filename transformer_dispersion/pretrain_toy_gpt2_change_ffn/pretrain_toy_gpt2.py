@@ -597,7 +597,7 @@ if __name__ == "__main__":
     ap.add_argument("--dataset_name", type=str, default="Salesforce/wikitext", help="HF dataset id.")
     ap.add_argument("--dataset_config", type=str, default="wikitext-103-raw-v1", help="Dataset config.")
     ap.add_argument("--hf_token", type=str, default=None, help="HF token for gated data.")
-    ap.add_argument("--lr", type=float, default=5e-5, help="Base LR; scaled by sqrt(world_size).")
+    ap.add_argument("--lr", type=float, default=5e-4, help="Base LR; scaled by sqrt(world_size).")
     ap.add_argument("--train_tokens", type=int, required=True, help="Token budget for training.")
     ap.add_argument("--dispersion", type=str, default=None, help="Dispersion variant; omit for CE only.")
     ap.add_argument("--dispersion_coeff", type=float, default=1.0, help="Dispersion loss weight.")

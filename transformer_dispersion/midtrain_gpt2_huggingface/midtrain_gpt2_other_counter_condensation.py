@@ -1,7 +1,7 @@
 """
 Mid-train GPT-2 with anti-condensation baselines from the reviewer discussion:
-  --perturb_random_noise: add Gaussian noise to token embeddings on each train forward.
-  --perturb_active_forgetting: reinitialize token embeddings every K steps (Chen et al., NeurIPS 2023).
+  --noisy_embedding: NEFTune-style noise on token embeddings each train forward.
+  --active_forgetting: reinitialize token embeddings every K steps (Chen et al., NeurIPS 2023).
 
 Mutually exclusive with dispersion loss; training objective is standard CE only.
 """
@@ -66,17 +66,17 @@ class ActiveForgettingCallback(TrainerCallback):
 
 
 class PerturbationTrainer(Trainer):
-    """CE only; optional additive noise on input embeddings during training."""
+    """CE only; optional NEFTune-style noise on input embeddings during training."""
 
-    def __init__(self, *args, embed_noise_std: float = 0.0, use_embed_noise: bool = False, **kwargs):
+    def __init__(self, *args, neftune_alpha: float = 0.0, use_embed_noise: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
-        self.embed_noise_std = embed_noise_std
+        self.neftune_alpha = neftune_alpha
         self.use_embed_noise = use_embed_noise
         self.loss_fn = mt.CausalLMLoss()
 
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         labels = inputs["labels"]
-        train_noise = self.use_embed_noise and model.training and self.embed_noise_std > 0
+        train_noise = self.use_embed_noise and model.training and self.neftune_alpha > 0
 
         if train_noise:
             input_ids = inputs["input_ids"]
@@ -84,8 +84,11 @@ class PerturbationTrainer(Trainer):
             emb_layer = m.get_input_embeddings()
             embeds = emb_layer(input_ids)
 
-            noise = torch.randn(embeds.shape, device=embeds.device, dtype=embeds.dtype)
-            inputs_embeds = embeds + noise * self.embed_noise_std
+            # NEFTune: uniform noise, mag_norm = alpha / sqrt(|positions| * |hidden|) for shape (B, S, H).
+            d = float(embeds.size(1) * embeds.size(2))
+            mag_norm = self.neftune_alpha / math.sqrt(d)
+            noise = torch.empty_like(embeds).uniform_(-mag_norm, mag_norm)
+            inputs_embeds = embeds + noise
 
             fwd = dict(inputs)
             fwd.pop("input_ids", None)
@@ -184,7 +187,7 @@ def main(args):
 
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
-    use_noise = args.perturb_random_noise
+    use_noise = args.noisy_embedding
     trainer = PerturbationTrainer(
         model=model,
         args=training_args,
@@ -192,7 +195,7 @@ def main(args):
         eval_dataset=lm_val,
         processing_class=tokenizer,
         data_collator=data_collator,
-        embed_noise_std=args.embed_noise_std,
+        neftune_alpha=args.neftune_alpha,
         use_embed_noise=use_noise,
     )
 
@@ -200,7 +203,11 @@ def main(args):
     mt.log("=== Mid-training setup (counter-condensation baselines) ===", filepath=args.log_path)
     mt.log(f"Perturbation mode: {perturb_tag}", filepath=args.log_path)
     if use_noise:
-        mt.log(f"Embedding noise std: {args.embed_noise_std}", filepath=args.log_path)
+        mt.log(
+            f"NEFTune embedding noise: alpha={args.neftune_alpha} "
+            f"(uniform in [-mag_norm, mag_norm], mag_norm=alpha/sqrt(S*H), S=seq len, H=hidden dim)",
+            filepath=args.log_path,
+        )
     else:
         mt.log(f"Active forgetting every {args.active_forget_every_k_steps} optimizer steps", filepath=args.log_path)
     mt.log(f"Model: {args.model_name}", filepath=args.log_path)
@@ -246,7 +253,7 @@ def main(args):
     )
     trainer.add_callback(lm_eval_callback)
 
-    if args.perturb_active_forgetting:
+    if args.active_forgetting:
         trainer.add_callback(
             ActiveForgettingCallback(
                 every_k_steps=args.active_forget_every_k_steps,
@@ -285,10 +292,19 @@ if __name__ == "__main__":
     ap.add_argument("--hf_token", type=str, default=None, help="HF token if needed.")
     ap.add_argument("--lr", type=float, default=5e-5, help="Base LR (scaled by sqrt(world_size)).")
     ap.add_argument("--train_tokens", type=int, required=True, help="Total training token budget.")
-    ap.add_argument("--perturb_random_noise", action="store_true", help="Gaussian noise on token embeddings (train).")
-    ap.add_argument("--perturb_active_forgetting", action="store_true", help="Reinit embeddings every K steps (Chen et al.).")
-    ap.add_argument("--embed_noise_std", type=float, default=0.02, help="Noise std if --perturb_random_noise.")
-    ap.add_argument("--active_forget_every_k_steps", type=int, default=1000, help="Reinit period if --perturb_active_forgetting.")
+    ap.add_argument(
+        "--noisy_embedding",
+        action="store_true",
+        help="NEFTune-style uniform noise on token embeddings during training (train only).",
+    )
+    ap.add_argument("--active_forgetting", action="store_true", help="Reinit embeddings every K steps (Chen et al.).")
+    ap.add_argument(
+        "--neftune_alpha",
+        type=float,
+        default=5.0,
+        help="NEFTune noise_alpha if --noisy_embedding (bound = alpha/sqrt(S H) on token embeddings).",
+    )
+    ap.add_argument("--active_forget_every_k_steps", type=int, default=1000, help="Reinit period if --active_forgetting.")
     ap.add_argument("--num_fewshot", type=int, default=1, help="lm-eval fewshot count.")
     ap.add_argument("--max_eval_samples", type=int, default=500, help="lm-eval limit per task.")
     ap.add_argument("--num_ckpt", type=int, default=5, help="Eval/save intervals from token budget.")
@@ -301,13 +317,13 @@ if __name__ == "__main__":
 
     args = ap.parse_args()
 
-    n_modes = int(args.perturb_random_noise) + int(args.perturb_active_forgetting)
+    n_modes = int(args.noisy_embedding) + int(args.active_forgetting)
     if n_modes != 1:
-        ap.error("Specify exactly one of --perturb_random_noise and --perturb_active_forgetting.")
+        ap.error("Specify exactly one of --noisy_embedding and --active_forgetting.")
 
     ds = "-".join(args.dataset_name.split("/"))
-    if args.perturb_random_noise:
-        mid = f"ccnoise-{args.embed_noise_std}"
+    if args.noisy_embedding:
+        mid = f"ccnoise-{args.neftune_alpha}"
     else:
         mid = f"ccforget-{args.active_forget_every_k_steps}"
     args.output_dir = (
