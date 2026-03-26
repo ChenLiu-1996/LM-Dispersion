@@ -8,15 +8,20 @@ import sys
 import tempfile
 from glob import glob
 
+import matplotlib.gridspec as gridspec
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
+from scipy.stats import kendalltau, spearmanr
 from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, AutoModelForCausalLM, AutoTokenizer
 
 import_dir = '/'.join(os.path.realpath(__file__).split('/')[:-3])
 sys.path.insert(0, os.path.join(import_dir, 'prelim'))
 from utils.text_data import get_random_long_text
+
+PLOT_TREND_WIDTH_UNIT = 9.0
+PLOT_TREND_FIGHEIGHT = 8.0
 
 
 def normalize_rows(x: np.ndarray, eps: float = 1e-3) -> np.ndarray:
@@ -26,6 +31,22 @@ def normalize_rows(x: np.ndarray, eps: float = 1e-3) -> np.ndarray:
 
 def cosine_matrices_per_layer(hidden_states: tuple) -> list[np.ndarray]:
     return [np.matmul(z, z.T).clip(-1, 1) for z in (normalize_rows(t.squeeze(0).cpu().numpy()) for t in hidden_states)]
+
+
+def mean_cosine_per_layer(cossim_by_layer: list[np.ndarray]) -> np.ndarray:
+    """Scalar mean cosine per layer (same summary as plot_trend.py on cossim matrices)."""
+    return np.array([float(np.asarray(m).mean()) for m in cossim_by_layer], dtype=np.float64)
+
+
+def layer_depth_correlations(cossim_by_layer: list[np.ndarray]) -> tuple[float, float]:
+    """Spearman and Kendall correlation between layer-mean cosine and layer index (trend vs depth)."""
+    y = mean_cosine_per_layer(cossim_by_layer)
+    if y.size < 2:
+        return float("nan"), float("nan")
+    x = np.arange(len(y), dtype=np.float64)
+    sp, _ = spearmanr(y, x)
+    kt, _ = kendalltau(y, x)
+    return (float(sp) if np.isfinite(sp) else float("nan"), float(kt) if np.isfinite(kt) else float("nan"))
 
 
 def histogram_stack_over_layers(cossim_by_layer: list[np.ndarray], bins: int = 128) -> tuple[np.ndarray, list[float]]:
@@ -106,7 +127,7 @@ def draw_heatmap(fig, axis, cossim_by_layer: list[np.ndarray], title: str) -> No
         return
 
     image = axis.imshow(hist_matrix.T, aspect="auto", origin="lower", cmap="Reds", extent=[0, layer_fractions[-1], -1, 1], vmin=0, vmax=10)
-    axis.set_title(title, pad=8, fontsize=28)
+    axis.set_title(title, fontsize=36, pad=24)
     axis.set_xlabel("Layer Fraction", fontsize=36)
     axis.set_ylabel("Cosine Similarity", fontsize=36)
     axis.set_xticks([0, 0.2, 0.4, 0.6, 0.8, 1])
@@ -120,7 +141,53 @@ def draw_heatmap(fig, axis, cossim_by_layer: list[np.ndarray], title: str) -> No
 
     colorbar = fig.colorbar(image, ax=axis)
     colorbar.ax.tick_params(axis="both", which="major", labelsize=26)
-    colorbar.ax.set_title("Probability\nDensity", fontsize=20, pad=24)
+    colorbar.ax.set_title("Probability\nDensity", fontsize=20, pad=20)
+
+
+def draw_trend_panel(
+    fig,
+    grid_spec: gridspec.GridSpec,
+    f_values: list[int],
+    spearman_corr_list: list[float],
+    kendall_tau_list: list[float],
+) -> None:
+    """Dual-axis trend over F (same layout idea as prelim/exploration/plot_trend.py)."""
+    n = len(f_values)
+    if n < 1:
+        return
+    ax = fig.add_subplot(grid_spec[:, 0])
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    x = np.arange(n, dtype=np.float64)
+    colors_b = plt.cm.Blues(np.linspace(0.3, 0.9, n))
+    for i in range(n - 1):
+        seg_x, seg_y = x[i : i + 2], [spearman_corr_list[i], spearman_corr_list[i + 1]]
+        if np.isfinite(seg_y).all():
+            ax.plot(seg_x, seg_y, color=colors_b[i], linewidth=4)
+    for i in range(n):
+        if np.isfinite(spearman_corr_list[i]):
+            ax.scatter([i], [spearman_corr_list[i]], color=[colors_b[i]], s=120, zorder=3)
+    ax.set_ylabel("Spearman correlation", labelpad=12, fontsize=30, color=colors_b[n - 1])
+    ax.set_ylim(-1, 1.05)
+    ax.set_xlim(-0.3, n - 0.7)
+    ax.tick_params(axis="both", which="major", labelsize=26)
+    ax.set_xticks(x)
+    ax.set_xticklabels(f_values, fontsize=24)
+
+    ax2 = ax.twinx()
+    ax2.spines["top"].set_visible(False)
+    ax2.spines["left"].set_visible(False)
+    colors_r = plt.cm.Reds(np.linspace(0.3, 0.9, n))
+    for i in range(n - 1):
+        seg_x, seg_y = x[i : i + 2], [kendall_tau_list[i], kendall_tau_list[i + 1]]
+        if np.isfinite(seg_y).all():
+            ax2.plot(seg_x, seg_y, color=colors_r[i], linewidth=4)
+    for i in range(n):
+        if np.isfinite(kendall_tau_list[i]):
+            ax2.scatter([i], [kendall_tau_list[i]], color=[colors_r[i]], s=120, zorder=3)
+    ax2.set_ylabel("Kendall tau", labelpad=36, fontsize=30, rotation=270, color=colors_r[n - 1])
+    ax2.set_ylim(-1, 1.05)
+    ax2.tick_params(axis="y", which="major", labelsize=26)
 
 
 def glob_pretrain_ffn_run_directories(results_dir: str, model_name: str, dataset_name: str | None) -> tuple[list[str], str]:
@@ -151,21 +218,31 @@ def main(args) -> None:
     if output_directory:
         os.makedirs(output_directory, exist_ok=True)
 
-    figure = plt.figure(figsize=(args.fig_width * len(ninner_order), args.fig_height_per_row))
-    for col_index, n_inner in enumerate(tqdm(ninner_order, desc="n_inner")):
-        axis = figure.add_subplot(1, len(ninner_order), col_index + 1)
-        run_folder = folder_by_ninner[n_inner]
-        checkpoints = find_checkpoints(run_folder)
-        training_step, checkpoint_path = checkpoints[-1]
+    n_panels = len(ninner_order)
+    spearman_corrs: list[float] = []
+    kendall_taus: list[float] = []
 
+    scale = float(args.fig_scale)
+    if n_panels > 0:
+        # trend | gap | heatmaps (row 0 = first ckpt, row 1 = last ckpt per F)
+        width_ratios = [1.0, 0.05] + [1.0] * n_panels
+        ratio_sum = float(sum(width_ratios))
+        figure = plt.figure(
+            figsize=(
+                scale * PLOT_TREND_WIDTH_UNIT * ratio_sum,
+                scale * PLOT_TREND_FIGHEIGHT * 2.0,
+            )
+        )
+        grid_spec = gridspec.GridSpec(2, len(width_ratios), width_ratios=width_ratios, height_ratios=[1.0, 1.0])
+    else:
+        figure = plt.figure(figsize=(scale * PLOT_TREND_WIDTH_UNIT, scale * PLOT_TREND_FIGHEIGHT * 2.0))
+        grid_spec = None
+
+    def run_heatmap_for_checkpoint(axis, checkpoint_path: str, n_inner: int, step_val: int) -> tuple[float, float]:
+        """Returns (spearman, kendall) from mean cossim layers (for trend: use last-ckpt row only)."""
         with tempfile.TemporaryDirectory() as cache_dir:
-            try:
-                tokenizer = AutoTokenizer.from_pretrained(checkpoint_path, cache_dir=cache_dir)
-                model = load_model(checkpoint_path, cache_dir, device)
-            except Exception:
-                axis.axis("off")
-                continue
-
+            tokenizer = AutoTokenizer.from_pretrained(checkpoint_path, cache_dir=cache_dir)
+            model = load_model(checkpoint_path, cache_dir, device)
             stacked_per_layer = None
             for repetition_index in range(args.repetitions):
                 torch.manual_seed(repetition_index)
@@ -185,20 +262,60 @@ def main(args) -> None:
                         stacked_per_layer[layer_index] = np.concatenate((stacked_per_layer[layer_index], arr[np.newaxis, ...]), axis=0)
 
             mean_per_layer = [stack.mean(axis=0) for stack in stacked_per_layer]
-            draw_heatmap(figure, axis, mean_per_layer, title=f"$F={n_inner}$, step {training_step}")
-            figure.tight_layout(pad=2)
-            figure.savefig(args.output, dpi=300)
+            sp, kt = layer_depth_correlations(mean_per_layer)
+            draw_heatmap(figure, axis, mean_per_layer, title=f"$F = {n_inner}$ (step {step_val})")
             del model
             if device == "cuda":
                 torch.cuda.empty_cache()
+            return sp, kt
 
+    for col_index, n_inner in enumerate(tqdm(ninner_order, desc="n_inner")):
+        assert grid_spec is not None
+        run_folder = folder_by_ninner[n_inner]
+        checkpoints = find_checkpoints(run_folder)
+        if not checkpoints:
+            for row in range(2):
+                ax = figure.add_subplot(grid_spec[row, col_index + 2])
+                ax.axis("off")
+            spearman_corrs.append(float("nan"))
+            kendall_taus.append(float("nan"))
+            continue
+
+        first_step, first_path = checkpoints[0]
+        last_step, last_path = checkpoints[-1]
+        rows_spec = [
+            (0, first_path, first_step),
+            (1, last_path, last_step),
+        ]
+
+        for row_idx, ckpt_path, step_val in rows_spec:
+            axis = figure.add_subplot(grid_spec[row_idx, col_index + 2])
+            try:
+                sp, kt = run_heatmap_for_checkpoint(axis, ckpt_path, n_inner, step_val)
+                if row_idx == 1:
+                    spearman_corrs.append(sp)
+                    kendall_taus.append(kt)
+            except Exception:
+                axis.axis("off")
+                if row_idx == 1:
+                    spearman_corrs.append(float("nan"))
+                    kendall_taus.append(float("nan"))
+
+            figure.tight_layout(pad=2)
+            figure.savefig(args.output, dpi=300)
+
+    if grid_spec is not None and n_panels > 0:
+        draw_trend_panel(figure, grid_spec, ninner_order, spearman_corrs, kendall_taus)
+
+    figure.tight_layout(pad=2)
+    figure.savefig(args.output, dpi=300)
     plt.close(figure)
     print(f"Saved {args.output}")
 
 
 if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    parser = argparse.ArgumentParser(description="Last-checkpoint heatmap per n_inner (pretrain_toy_gpt2 FFN sweep).")
+    parser = argparse.ArgumentParser(description="First- and last-checkpoint heatmaps per n_inner + Spearman/Kendall trend (FFN sweep).")
     parser.add_argument("--model_name", default="gpt2")
     parser.add_argument("--dataset_name", default="Salesforce/wikitext")
     parser.add_argument("--any_dataset", action="store_true")
@@ -206,12 +323,16 @@ if __name__ == "__main__":
     parser.add_argument("--output", default=None)
     parser.add_argument("--repetitions", type=int, default=10)
     parser.add_argument("--max_length", type=int, default=1024)
-    parser.add_argument("--fig_width", type=float, default=9.5)
-    parser.add_argument("--fig_height_per_row", type=float, default=8)
+    parser.add_argument(
+        "--fig_scale",
+        type=float,
+        default=1.0,
+        help="Scale factor on figure size. Base: trend + two rows of heatmaps (first/last ckpt per F).",
+    )
     parser.add_argument("--cpu", action="store_true")
     args = parser.parse_args()
     if args.results_dir is None:
         args.results_dir = os.path.join(script_dir, "results")
     if args.output is None:
-        args.output = os.path.join(script_dir, "figures", f"embedding_heatmaps_pretrain_toy_ffn_{args.model_name}_last_ckpt_per_F.png")
+        args.output = os.path.join(script_dir, "figures", f"embedding_heatmaps_pretrain_toy_ffn_{args.model_name}_first_last_ckpt_per_F.png")
     main(args)
