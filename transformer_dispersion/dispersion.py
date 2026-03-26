@@ -26,7 +26,7 @@ class DispersionLoss(torch.nn.Module):
                  margin: float = 0.5,  # NOTE: 0.5 angular cosine distance = orthogonal.
                  epsilon: float = 1e-2,
                  clamp_threshold: float = 0.25,
-                 max_tokens: int = 512):
+                 max_tokens: int = 256):
         super().__init__()
         variant = variant.lower()
         assert variant in {"decorrelation", "l2_repel", "angular_spread", "orthogonalization", "perplexity_entropy"}
