@@ -10,8 +10,12 @@ Active forgetting follows the protocol in
   (1) reset token embeddings to fresh Gaussian draws at episode boundaries (after the
       optimizer step with gs ≡ K-1 (mod K), so the next forward/backward matches fresh Θ),
   (2) zero Adam (exp_avg / exp_avg_sq / step) for those parameters together with the reset,
-  (3) drive embedding LR with the same cosine+warmup *shape* as the body but with an
-      episode counter n_emb ≡ n (mod K), while the body uses the global step (Algorithm 1).
+  (3) embedding LR uses the same schedule *shape* as the body, but the schedule index follows
+      language-model-plasticity `fairseq/trainer.py` `lr_step_update` for `adamef`:
+      `speed = max_update // K`, `emb_num_updates = (body_num_updates * speed) % max_update`
+      (then `lr_scheduler.step_update(emb_num_updates)` there; we apply the equivalent multiplier
+      with cosine+warmup here to match HF mid-train). Body index uses `global_step` (completed
+      optimizer steps before this step), matching `step_update(get_num_updates())` after each step.
 
 Requires transformers>=4.46 (TrainerCallback.on_pre_optimizer_step).
 
@@ -136,12 +140,27 @@ def _cosine_warmup_mult(current_step: int, num_training_steps: int, warmup_ratio
     return max(0.0, 0.5 * (1.0 + math.cos(math.pi * progress)))
 
 
-class ActiveForgettingCallback(TrainerCallback):
-    """Paper-style forgetting: dual LR before optimizer.step; reset after the (K-1)th step (on_step_end).
+def _plasticity_emb_schedule_step(body_num_updates: int, max_update: int, K: int) -> int:
+    """Match language-model-plasticity fairseq `Trainer.lr_step_update` for adamef (embedding index).
 
-    Gradients must match the weights they were taken w.r.t., so we cannot reinit in on_pre_optimizer_step.
-    After optimizer step when global_step % K == K - 1, we reinit embeddings and clear Adam state so the
-    *next* forward/backward uses fresh Θ with fresh moments (Algorithm 1 in Chen et al.).
+    See https://github.com/facebookresearch/language-model-plasticity — `language/fairseq/trainer.py`:
+    `speed = tot // K`, `emb_num_updates = (body_num_updates * speed) % tot`.
+    """
+    if max_update <= 0 or K <= 0:
+        return 0
+    speed = max_update // K
+    return (body_num_updates * speed) % max_update
+
+
+class ActiveForgettingCallback(TrainerCallback):
+    """Aligns with language-model-plasticity: AdamEF-style cleared moments + lr_emb indexing; HF-safe reset timing.
+
+    - Dual LR: body vs embedding indices as in fairseq `trainer.py` `lr_step_update` for `adamef`.
+    - Weight reinit + full Adam state clear on embedding tensors after steps with gs ≡ K-1 (mod K), so the
+      next minibatch's forward matches fresh Θ (grad/weight consistency; fairseq resets weights in-model).
+
+    References: https://github.com/facebookresearch/language-model-plasticity
+    (`fairseq/optim/adam.py` AdamEF, `fairseq/trainer.py` lr_step_update).
     """
 
     def __init__(self, trainer: "PerturbationTrainer"):
@@ -163,13 +182,13 @@ class ActiveForgettingCallback(TrainerCallback):
         if opt is None:
             return control
 
-        g = state.global_step
-        upcoming = g + 1
+        g = state.global_step  # completed optimizer steps before this step (fairseq num_updates before increment)
         K = self.every_k
+        tot = self.max_steps
 
-        body_mult = _cosine_warmup_mult(min(g, max(0, self.max_steps - 1)), self.max_steps, self.warmup_ratio)
-        t_emb = upcoming % K
-        embed_mult = _cosine_warmup_mult(t_emb, K, self.warmup_ratio)
+        body_mult = _cosine_warmup_mult(min(g, max(0, tot - 1)), tot, self.warmup_ratio)
+        emb_sched_step = _plasticity_emb_schedule_step(g, tot, K)
+        embed_mult = _cosine_warmup_mult(min(emb_sched_step, max(0, tot - 1)), tot, self.warmup_ratio)
 
         for group in opt.param_groups:
             name = group.get("name", "")
@@ -468,8 +487,8 @@ def main(args):
         mt.log(
             f"Active forgetting (Chen et al. 2023; https://arxiv.org/pdf/2307.01163 ; "
             f"code https://github.com/facebookresearch/language-model-plasticity ): "
-            f"K={args.active_forget_every_k_steps}, dual LR (global vs n mod K), "
-            f"reset+Adam clear after steps gs≡K-1 (mod K) so the next forward uses fresh Θ.",
+            f"K={args.active_forget_every_k_steps}, dual LR (body step g; emb idx (g*floor(T/K))%T per fairseq), "
+            f"reset+Adam clear after gs≡K-1 (mod K).",
             filepath=args.log_path,
         )
     mt.log(f"Model: {args.model_name}", filepath=args.log_path)
