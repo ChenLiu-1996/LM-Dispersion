@@ -1,22 +1,16 @@
 """
-Mid-train GPT-2 with anti-condensation baselines from the reviewer discussion:
-  --noisy_embedding: NEFTune-style noise on token embeddings each train forward.
-  --active_forgetting: active forgetting on token embeddings (Chen et al., NeurIPS 2023).
+Mid-train GPT-2 with optional NEFTune noise or active forgetting (Chen et al., NeurIPS 2023).
 
-Active forgetting follows the protocol in
-  "Improving Language Plasticity via Pretraining with Active Forgetting"
-  (https://arxiv.org/pdf/2307.01163), as implemented in the official fairseq fork
-  https://github.com/facebookresearch/language-model-plasticity (AdamEF + lr_emb):
-  (1) reset token embeddings to fresh Gaussian draws when completed optimizer steps gs satisfy
-      gs > 0 and gs % K == 0, matching language-model-plasticity fairseq_cli/train.py
-      (num_updates % clear_embed_every_K_updates == 0 after train_step; HF global_step is that count),
-  (2) zero Adam (exp_avg / exp_avg_sq / step) for those parameters together with the reset,
-  (3) **Body** LR stays **constant** at `--lr` (times sqrt(world_size)), matching typical mid-train. **Embedding** LR alone
-      follows warmup + linear decay (Fairseq `polynomial_decay` with `power=1` / HF polynomial `lr_end=0` shape),
-      with schedule **index** from language-model-plasticity `fairseq/trainer.py` `lr_step_update` for `adamef`:
-      `speed = max_update // K`, `emb_num_updates = (body_num_updates * speed) % max_update`
-      (`Trainer` uses `lr_scheduler_type=constant` so the global scheduler does not decay the body; the callback
-      sets per-group LRs each step).
+  --noisy_embedding: NEFTune-style noise on token embeddings each train forward.
+  --active_forgetting: periodic reset of input token embeddings (Chen et al., 2023).
+
+Active forgetting follows Chen et al. (2023) / https://github.com/facebookresearch/language-model-plasticity:
+  (1) reset **input token embeddings only** to N(0, 0.02) when gs > 0 and gs % K == 0 (fairseq train timing),
+  (2) clear Adam moments (+ step) for those embedding parameters only; **do not** reset lm_head / body weights,
+  (3) **No global HF LR scheduler** when active forgetting: body LR follows cosine+warmup (same shape as midtrain);
+      embedding LR uses a **separate** schedule: peak ``--af-emb-peak-lr`` (default 1e-4), linear warmup + linear decay
+      with schedule index from fairseq ``lr_step_update``: ``speed = T // K``, ``emb_idx = (g * speed) % T``,
+  (4) Gradient clip: **0.5** on embedding param groups, **1.0** on body (``max_grad_norm=0``; clip in callback).
 
 Mutually exclusive with dispersion loss; training objective is standard CE only.
 """
@@ -49,8 +43,8 @@ def _unwrap_model(model):
     return model.module if hasattr(model, "module") else model
 
 
-def _collect_embedding_trainable_params(model) -> List[torch.nn.Parameter]:
-    """Input token embeddings plus output head weights when untied (Chen et al. reset both in RoBERTa)."""
+def _collect_input_embedding_trainable_params(model) -> List[torch.nn.Parameter]:
+    """Input token embeddings only (Chen et al.); lm_head / output weights are not reset."""
     m = _unwrap_model(model)
     out: List[torch.nn.Parameter] = []
     seen = set()
@@ -60,22 +54,17 @@ def _collect_embedding_trainable_params(model) -> List[torch.nn.Parameter]:
             if oid not in seen:
                 seen.add(oid)
                 out.append(p)
-    olm = m.get_output_embeddings()
-    if olm is not None:
-        w = getattr(olm, "weight", None)
-        if w is not None and w.requires_grad and id(w) not in seen:
-            out.append(w)
     return out
 
 
-def _reinit_token_embeddings_synced(model, std: float, pad_token_id: Optional[int]):
-    """Gaussian reinit (paper: N(0, 0.02)); zero pad row like manual_reset_emb / RoBERTa."""
+def _reinit_input_token_embeddings_synced(model, pad_token_id: Optional[int]):
+    """N(0, 0.02) reinit for input embedding weights only; zero pad row (Chen et al.)."""
     m = _unwrap_model(model)
     emb = m.get_input_embeddings()
     w = emb.weight.data
     if dist.is_available() and dist.is_initialized():
         if dist.get_rank() == 0:
-            torch.nn.init.normal_(w, mean=0.0, std=std)
+            torch.nn.init.normal_(w, mean=0.0, std=0.02)
             pidx = getattr(emb, "padding_idx", None)
             if pidx is not None:
                 w[pidx].zero_()
@@ -83,27 +72,12 @@ def _reinit_token_embeddings_synced(model, std: float, pad_token_id: Optional[in
                 w[int(pad_token_id)].zero_()
         dist.broadcast(w, src=0)
     else:
-        torch.nn.init.normal_(w, mean=0.0, std=std)
+        torch.nn.init.normal_(w, mean=0.0, std=0.02)
         pidx = getattr(emb, "padding_idx", None)
         if pidx is not None:
             w[pidx].zero_()
         elif pad_token_id is not None and 0 <= int(pad_token_id) < w.size(0):
             w[int(pad_token_id)].zero_()
-
-    olm = m.get_output_embeddings()
-    if olm is not None:
-        ow = getattr(olm, "weight", None)
-        if ow is not None and ow is not w:
-            if dist.is_available() and dist.is_initialized():
-                if dist.get_rank() == 0:
-                    torch.nn.init.normal_(ow.data, mean=0.0, std=std)
-                    if pad_token_id is not None and 0 <= int(pad_token_id) < ow.size(0):
-                        ow.data[int(pad_token_id)].zero_()
-                dist.broadcast(ow.data, src=0)
-            else:
-                torch.nn.init.normal_(ow.data, mean=0.0, std=std)
-                if pad_token_id is not None and 0 <= int(pad_token_id) < ow.size(0):
-                    ow.data[int(pad_token_id)].zero_()
 
 
 def _clear_adam_states_for_params(optimizer, params: Sequence[torch.nn.Parameter]) -> None:
@@ -158,25 +132,39 @@ def _plasticity_emb_schedule_step(body_num_updates: int, max_update: int, K: int
     return (body_num_updates * speed) % max_update
 
 
+def _cosine_warmup_mult(
+    current_step: int, num_training_steps: int, warmup_ratio: float, num_cycles: float = 0.5
+) -> float:
+    """Same multiplier shape as HF ``get_cosine_schedule_with_warmup`` (body LR when active forgetting)."""
+    if num_training_steps <= 0:
+        return 1.0
+    num_warmup_steps = int(num_training_steps * warmup_ratio)
+    if current_step < num_warmup_steps:
+        return float(current_step) / float(max(1, num_warmup_steps))
+    progress = float(current_step - num_warmup_steps) / float(
+        max(1, num_training_steps - num_warmup_steps)
+    )
+    return max(0.0, 0.5 * (1.0 + math.cos(math.pi * float(num_cycles) * 2.0 * progress)))
+
+
 class ActiveForgettingCallback(TrainerCallback):
-    """Aligns with language-model-plasticity: AdamEF-style cleared moments + lr_emb indexing; HF-safe reset timing.
+    """Plasticity-style Adam state clear on forget; separate embedding vs body LR; per-group grad clip.
 
-    - Body LR: constant `af_base_lr`. Embedding LR: same decay *shape* as plasticity polynomial p=1, index from
-      `lr_step_update` (`(g*speed)%tot`), not the global HF scheduler (which is constant for this run).
-    - Weight reinit + full Adam state clear on embedding tensors after steps with gs > 0 and gs % K == 0
-      (official plasticity train loop timing), so the next minibatch's forward uses fresh weights.
+    Body LR: cosine + warmup (midtrain-shaped). Embedding LR: peak ``af_emb_peak_lr`` × linear warmup/decay with
+    index ``(g * floor(T/K)) % T``. Input embeddings only reinit; lm_head untouched.
 
-    References: https://github.com/facebookresearch/language-model-plasticity
-    (`fairseq/optim/adam.py` AdamEF, `fairseq/trainer.py` lr_step_update).
+    References: Chen et al. 2023; https://github.com/facebookresearch/language-model-plasticity
     """
 
     def __init__(self, trainer: "PerturbationTrainer"):
         self.trainer = trainer
         self.every_k = trainer.active_forget_every_k
         self.log_path = trainer.af_log_path
-        self.warmup_ratio = trainer.af_warmup_ratio
         self.max_steps = trainer.args.max_steps
-        self.base_lr = trainer.af_base_lr
+        self.body_base_lr = trainer.af_body_base_lr
+        self.body_warmup_ratio = trainer.af_body_warmup_ratio
+        self.emb_peak_lr = trainer.af_emb_peak_lr
+        self.emb_warmup_ratio = trainer.af_emb_warmup_ratio
         self.pad_token_id = trainer.af_pad_token_id
 
     def on_pre_optimizer_step(self, args, state, control, **kwargs):
@@ -189,19 +177,33 @@ class ActiveForgettingCallback(TrainerCallback):
         if opt is None:
             return control
 
-        g = state.global_step  # completed optimizer steps before this step (fairseq num_updates before increment)
+        acc = self.trainer.accelerator
+        for group in opt.param_groups:
+            name = group.get("name", "")
+            params = group.get("params") or []
+            if not params:
+                continue
+            if name.startswith("embedding"):
+                acc.clip_grad_norm_(params, 0.5)
+            elif name.startswith("body"):
+                acc.clip_grad_norm_(params, 1.0)
+
+        g = state.global_step
         K = self.every_k
         tot = self.max_steps
 
-        emb_sched_step = _plasticity_emb_schedule_step(g, tot, K)
-        embed_mult = _linear_warmup_decay_mult(min(emb_sched_step, max(0, tot - 1)), tot, self.warmup_ratio)
+        emb_idx = _plasticity_emb_schedule_step(g, tot, K)
+        embed_mult = _linear_warmup_decay_mult(
+            min(emb_idx, max(0, tot - 1)), tot, self.emb_warmup_ratio
+        )
+        body_mult = _cosine_warmup_mult(g, tot, self.body_warmup_ratio)
 
         for group in opt.param_groups:
             name = group.get("name", "")
             if name.startswith("embedding"):
-                group["lr"] = self.base_lr * embed_mult
+                group["lr"] = self.emb_peak_lr * embed_mult
             elif name.startswith("body"):
-                group["lr"] = self.base_lr
+                group["lr"] = self.body_base_lr * body_mult
         return control
 
     def on_step_end(self, args, state, control, **kwargs):
@@ -216,9 +218,8 @@ class ActiveForgettingCallback(TrainerCallback):
         opt = kwargs.get("optimizer", self.trainer.optimizer)
         if model is None or opt is None or not model.training:
             return control
-        std = getattr(_unwrap_model(model).config, "initializer_range", 0.02)
-        _reinit_token_embeddings_synced(model, std=std, pad_token_id=self.pad_token_id)
-        emb_params = _collect_embedding_trainable_params(model)
+        _reinit_input_token_embeddings_synced(model, pad_token_id=self.pad_token_id)
+        emb_params = _collect_input_embedding_trainable_params(model)
         _clear_adam_states_for_params(opt, emb_params)
         local_rank = int(os.environ.get("LOCAL_RANK", "0"))
         if local_rank == 0:
@@ -241,8 +242,10 @@ class PerturbationTrainer(Trainer):
         active_forgetting: bool = False,
         active_forget_every_k: int = 1000,
         af_log_path: Optional[str] = None,
-        af_warmup_ratio: float = 0.2,
-        af_base_lr: float = 1e-4,
+        af_body_base_lr: float = 5e-5,
+        af_body_warmup_ratio: float = 0.2,
+        af_emb_peak_lr: float = 1e-4,
+        af_emb_warmup_ratio: float = 0.08,
         af_pad_token_id: Optional[int] = None,
         **kwargs,
     ):
@@ -253,9 +256,18 @@ class PerturbationTrainer(Trainer):
         self.active_forgetting = active_forgetting
         self.active_forget_every_k = active_forget_every_k
         self.af_log_path = af_log_path
-        self.af_warmup_ratio = af_warmup_ratio
-        self.af_base_lr = af_base_lr
+        self.af_body_base_lr = af_body_base_lr
+        self.af_body_warmup_ratio = af_body_warmup_ratio
+        self.af_emb_peak_lr = af_emb_peak_lr
+        self.af_emb_warmup_ratio = af_emb_warmup_ratio
         self.af_pad_token_id = af_pad_token_id
+
+    def create_scheduler(self, num_training_steps: int, optimizer=None):
+        """Active forgetting sets LRs in ``ActiveForgettingCallback``; skip HF scheduler."""
+        if self.active_forgetting:
+            self.lr_scheduler = None
+            return
+        return super().create_scheduler(num_training_steps, optimizer=optimizer)
 
     def create_optimizer(self):
         if not self.active_forgetting:
@@ -264,7 +276,7 @@ class PerturbationTrainer(Trainer):
         opt_model = self.model
         decay_parameters = get_parameter_names(opt_model, ALL_LAYERNORM_LAYERS)
         decay_parameters = [n for n in decay_parameters if "bias" not in n]
-        emb_ids = {id(p) for p in _collect_embedding_trainable_params(opt_model)}
+        emb_ids = {id(p) for p in _collect_input_embedding_trainable_params(opt_model)}
 
         def pick(names_in_decay: bool):
             rows = []
@@ -421,9 +433,14 @@ def main(args):
     fp16, bf16 = mt.compute_precision_flags()
     learning_rate = args.lr * math.sqrt(world_size)
 
-    # Active forgetting: constant LR for the run (body); embedding decay is applied only in ActiveForgettingCallback.
-    sched_type = "constant" if args.active_forgetting else "cosine"
-    warmup_ratio = 0.0 if args.active_forgetting else 0.2
+    if args.active_forgetting:
+        sched_type = "constant"
+        warmup_ratio = 0.0
+        max_grad_norm = 0.0
+    else:
+        sched_type = "cosine"
+        warmup_ratio = 0.2
+        max_grad_norm = 1.0
 
     training_args_kw = dict(
         output_dir=args.output_dir,
@@ -437,7 +454,7 @@ def main(args):
         weight_decay=0.1,
         adam_beta1=0.9,
         adam_beta2=0.95,
-        max_grad_norm=1.0,
+        max_grad_norm=max_grad_norm,
         log_level="info",
         logging_steps=max(1, max_steps // 20),
         log_on_each_node=False,
@@ -466,13 +483,15 @@ def main(args):
         active_forgetting=args.active_forgetting,
         active_forget_every_k=args.active_forget_every_k_steps,
         af_log_path=args.log_path,
-        af_warmup_ratio=0.2,
-        af_base_lr=learning_rate,
+        af_body_base_lr=learning_rate,
+        af_body_warmup_ratio=0.2,
+        af_emb_peak_lr=args.af_emb_peak_lr,
+        af_emb_warmup_ratio=args.af_emb_warmup_ratio,
         af_pad_token_id=int(tokenizer.pad_token_id) if tokenizer.pad_token_id is not None else None,
     )
 
     perturb_tag = "noise" if use_noise else "active_forget"
-    mt.log("=== Mid-training setup (counter-condensation baselines) ===", filepath=args.log_path)
+    mt.log("=== Mid-training setup (NEFTune noise or active forgetting) ===", filepath=args.log_path)
     mt.log(f"Perturbation mode: {perturb_tag}", filepath=args.log_path)
     if use_noise:
         mt.log(
@@ -484,8 +503,10 @@ def main(args):
         mt.log(
             f"Active forgetting (Chen et al. 2023; https://arxiv.org/pdf/2307.01163 ; "
             f"code https://github.com/facebookresearch/language-model-plasticity ): "
-            f"K={args.active_forget_every_k_steps}, body LR constant; emb LR warmup+linear decay with idx "
-            f"(g*floor(T/K))%T per fairseq lr_step_update; reset+Adam clear when gs>0 and gs%K==0.",
+            f"K={args.active_forget_every_k_steps}, input emb only reinit N(0,0.02); "
+            f"body LR cosine+warmup (peak scaled lr={learning_rate:.2e}); "
+            f"emb LR peak={args.af_emb_peak_lr:.2e}, linear warmup/decay, idx (g*floor(T/K))%T; "
+            f"grad clip emb=0.5 body=1.0; reset+Adam clear emb when gs>0 and gs%K==0.",
             filepath=args.log_path,
         )
     mt.log(f"Model: {args.model_name}", filepath=args.log_path)
@@ -557,7 +578,9 @@ def main(args):
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="Mid-train GPT-2: embedding noise or active forgetting baselines.")
+    ap = argparse.ArgumentParser(
+        description="Mid-train GPT-2 with NEFTune noise or active forgetting (mutually exclusive)."
+    )
     ap.add_argument("--model_name", type=str, default="gpt2", help="HF model id.")
     ap.add_argument("--cache_dir", type=str, default="./.cache/", help="HF cache dir.")
     ap.add_argument("--dataset_name", type=str, default="Salesforce/wikitext", help="HF dataset id.")
@@ -570,7 +593,7 @@ if __name__ == "__main__":
         action="store_true",
         help="NEFTune-style uniform noise on token embeddings during training (train only).",
     )
-    ap.add_argument("--active_forgetting", action="store_true", help="Active forgetting baseline (Chen et al. 2023).")
+    ap.add_argument("--active_forgetting", action="store_true", help="Active forgetting (Chen et al. 2023).")
     ap.add_argument(
         "--neftune_alpha",
         type=float,
@@ -578,6 +601,18 @@ if __name__ == "__main__":
         help="NEFTune noise_alpha if --noisy_embedding (bound = alpha/sqrt(S H) on token embeddings).",
     )
     ap.add_argument("--active_forget_every_k_steps", type=int, default=1000, help="K if --active_forgetting.")
+    ap.add_argument(
+        "--af-emb-peak-lr",
+        type=float,
+        default=7e-4,
+        help="Peak LR for embedding param groups under active forgetting.",
+    )
+    ap.add_argument(
+        "--af-emb-warmup-ratio",
+        type=float,
+        default=0.08,
+        help="Embedding linear schedule: warmup fraction of max_steps (~10K/125K in Chen et al.).",
+    )
     ap.add_argument("--num_fewshot", type=int, default=1, help="lm-eval fewshot count.")
     ap.add_argument("--max_eval_samples", type=int, default=500, help="lm-eval limit per task.")
     ap.add_argument("--num_ckpt", type=int, default=5, help="Eval/save intervals from token budget.")
