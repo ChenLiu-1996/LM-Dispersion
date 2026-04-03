@@ -13,9 +13,12 @@ Active forgetting follows the protocol in
   (3) embedding LR uses the same schedule *shape* as the body, but the schedule index follows
       language-model-plasticity `fairseq/trainer.py` `lr_step_update` for `adamef`:
       `speed = max_update // K`, `emb_num_updates = (body_num_updates * speed) % max_update`
-      (then `lr_scheduler.step_update(emb_num_updates)` there; we apply the equivalent multiplier
-      with cosine+warmup here to match HF mid-train). Body index uses `global_step` (completed
-      optimizer steps before this step), matching `step_update(get_num_updates())` after each step.
+      (then `lr_scheduler.step_update(emb_num_updates)` there; we apply the equivalent multiplier here).
+      Official pretrain uses Fairseq `--lr-scheduler polynomial_decay` with default `power=1.0`
+      (`fb_sweep/sweep_iroberta_base_cc100_pretrain.py`, `fairseq/optim/lr_scheduler/polynomial_decay_schedule.py`),
+      i.e. linear warmup then linear decay to `end_learning_rate` — same multiplier shape as HuggingFace
+      `linear` or `polynomial` with `power=1.0`. Body index uses `global_step` (completed optimizer steps before
+      this step), matching `step_update(get_num_updates())` after each step.
 
 Requires transformers>=4.46 (TrainerCallback.on_pre_optimizer_step).
 
@@ -121,6 +124,8 @@ def _clear_adam_states_for_params(optimizer, params: Sequence[torch.nn.Parameter
                 st["exp_avg"].zero_()
             if "exp_avg_sq" in st and st["exp_avg_sq"] is not None:
                 st["exp_avg_sq"].zero_()
+            if "max_exp_avg_sq" in st and st["max_exp_avg_sq"] is not None:
+                st["max_exp_avg_sq"].zero_()
             if "step" in st:
                 s = st["step"]
                 if isinstance(s, torch.Tensor):
@@ -129,15 +134,20 @@ def _clear_adam_states_for_params(optimizer, params: Sequence[torch.nn.Parameter
                     st["step"] = 0
 
 
-def _cosine_warmup_mult(current_step: int, num_training_steps: int, warmup_ratio: float) -> float:
-    """Same shape as transformers get_cosine_schedule_with_warmup (HF cosine, num_cycles=0.5)."""
+def _linear_warmup_decay_mult(current_step: int, num_training_steps: int, warmup_ratio: float) -> float:
+    """LR multiplier matching language-model-plasticity Fairseq polynomial_decay with power=1 (linear post-warmup).
+
+    Same curve as HF `get_linear_schedule_with_warmup` / polynomial schedule with power=1 and lr_end=0.
+    """
     if num_training_steps <= 0:
         return 1.0
     num_warmup_steps = int(num_training_steps * warmup_ratio)
     if current_step < num_warmup_steps:
         return float(current_step) / float(max(1, num_warmup_steps))
-    progress = float(current_step - num_warmup_steps) / float(max(1, num_training_steps - num_warmup_steps))
-    return max(0.0, 0.5 * (1.0 + math.cos(math.pi * progress)))
+    return max(
+        0.0,
+        float(num_training_steps - current_step) / float(max(1, num_training_steps - num_warmup_steps)),
+    )
 
 
 def _plasticity_emb_schedule_step(body_num_updates: int, max_update: int, K: int) -> int:
@@ -186,9 +196,9 @@ class ActiveForgettingCallback(TrainerCallback):
         K = self.every_k
         tot = self.max_steps
 
-        body_mult = _cosine_warmup_mult(min(g, max(0, tot - 1)), tot, self.warmup_ratio)
+        body_mult = _linear_warmup_decay_mult(min(g, max(0, tot - 1)), tot, self.warmup_ratio)
         emb_sched_step = _plasticity_emb_schedule_step(g, tot, K)
-        embed_mult = _cosine_warmup_mult(min(emb_sched_step, max(0, tot - 1)), tot, self.warmup_ratio)
+        embed_mult = _linear_warmup_decay_mult(min(emb_sched_step, max(0, tot - 1)), tot, self.warmup_ratio)
 
         for group in opt.param_groups:
             name = group.get("name", "")
@@ -314,11 +324,19 @@ class PerturbationTrainer(Trainer):
     def create_scheduler(self, num_training_steps: int, optimizer: torch.optim.Optimizer = None):
         if not self.active_forgetting:
             return super().create_scheduler(num_training_steps, optimizer)
-        from torch.optim.lr_scheduler import LambdaLR
+        from transformers.optimization import get_scheduler
 
         optimizer = self.optimizer if optimizer is None else optimizer
         if self.lr_scheduler is None:
-            self.lr_scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0, last_epoch=-1)
+            num_warmup_steps = self.args.get_warmup_steps(num_training_steps)
+            # Match plasticity pretrain: polynomial_decay with power=1.0 (linear anneal); see sweep_iroberta_base_cc100_pretrain.py
+            self.lr_scheduler = get_scheduler(
+                name=self.args.lr_scheduler_type,
+                optimizer=optimizer,
+                num_warmup_steps=num_warmup_steps,
+                num_training_steps=num_training_steps,
+                scheduler_specific_kwargs=self.args.lr_scheduler_kwargs or {},
+            )
             self._created_lr_scheduler = True
         return self.lr_scheduler
 
@@ -426,10 +444,11 @@ def main(args):
     fp16, bf16 = mt.compute_precision_flags()
     learning_rate = args.lr * math.sqrt(world_size)
 
-    sched_type = "constant" if args.active_forgetting else "cosine"
-    warmup_ratio = 0.0 if args.active_forgetting else 0.2
+    # Official forgetting pretrain: polynomial_decay, power=1 (linear decay phase); warmup_updates=10000 in paper/sweep.
+    sched_type = "polynomial" if args.active_forgetting else "cosine"
+    warmup_ratio = 0.2
 
-    training_args = TrainingArguments(
+    training_args_kw = dict(
         output_dir=args.output_dir,
         per_device_train_batch_size=args.per_device_train_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
@@ -453,6 +472,10 @@ def main(args):
         dataloader_num_workers=args.num_workers,
         remove_unused_columns=True,
     )
+    if args.active_forgetting:
+        # get_scheduler passes these to get_polynomial_decay_schedule_with_warmup (defaults would use lr_end=1e-7).
+        training_args_kw["lr_scheduler_kwargs"] = {"power": 1.0, "lr_end": 0.0}
+    training_args = TrainingArguments(**training_args_kw)
 
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
