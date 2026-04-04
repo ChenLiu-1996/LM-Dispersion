@@ -598,7 +598,7 @@ if __name__ == "__main__":
     ap.add_argument(
         "--af-emb-peak-lr",
         type=float,
-        default=7e-4,
+        default=5e-5,
         help="Peak LR for embedding param groups under active forgetting.",
     )
     ap.add_argument(
