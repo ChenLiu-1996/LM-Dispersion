@@ -161,7 +161,7 @@ def plot_condensation_trend_with_last_n(model_id_list: List[str],
         plot_trend_metrics(gs[0, 2 + layer_idx], fig, model_id_list, mean_last_n, metric_1_name=f"Mean of last {layer_idx + 1} layers")
 
     mean_last_n = [mean_last_n_by_model[i][len(mean_last_n_by_model[i])//2] for i in range(len(model_id_list))]
-    plot_trend_metrics(gs[0, 7], fig, model_id_list, mean_last_n, metric_1_name=f"Mean of last N/2 layers")
+    plot_trend_metrics(gs[0, 7], fig, model_id_list, mean_last_n, metric_1_name=f"Mean of last L/2 layers")
 
     fig.tight_layout(pad=2)
 

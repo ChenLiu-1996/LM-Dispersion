@@ -138,36 +138,9 @@ python compute_embedding_cossim.py --model-id gpt2-medium --gpu --dataset squad 
 python compute_embedding_cossim.py --model-id gpt2-large --gpu --dataset squad && \
 python compute_embedding_cossim.py --model-id gpt2-xl --gpu --dataset squad
 
-python compute_embedding_cossim.py --model-id Qwen/Qwen3-0.6B --gpu --dataset pubmed && \
-python compute_embedding_cossim.py --model-id Qwen/Qwen3-1.7B --gpu --dataset pubmed && \
-python compute_embedding_cossim.py --model-id Qwen/Qwen3-4B --gpu --dataset pubmed && \
-python compute_embedding_cossim.py --model-id Qwen/Qwen3-8B --gpu --dataset pubmed && \
-python compute_embedding_cossim.py --model-id Qwen/Qwen3-14B --dataset pubmed && \
-python compute_embedding_cossim.py --model-id Qwen/Qwen3-32B --dataset pubmed
-
-python compute_embedding_cossim.py --model-id Qwen/Qwen3-0.6B --gpu --dataset imdb && \
-python compute_embedding_cossim.py --model-id Qwen/Qwen3-1.7B --gpu --dataset imdb && \
-python compute_embedding_cossim.py --model-id Qwen/Qwen3-4B --gpu --dataset imdb && \
-python compute_embedding_cossim.py --model-id Qwen/Qwen3-8B --gpu --dataset imdb && \
-python compute_embedding_cossim.py --model-id Qwen/Qwen3-14B --dataset imdb && \
-python compute_embedding_cossim.py --model-id Qwen/Qwen3-32B --dataset imdb
-
-python compute_embedding_cossim.py --model-id Qwen/Qwen3-0.6B --gpu --dataset squad && \
-python compute_embedding_cossim.py --model-id Qwen/Qwen3-1.7B --gpu --dataset squad && \
-python compute_embedding_cossim.py --model-id Qwen/Qwen3-4B --gpu --dataset squad && \
-python compute_embedding_cossim.py --model-id Qwen/Qwen3-8B --gpu --dataset squad && \
-python compute_embedding_cossim.py --model-id Qwen/Qwen3-14B --dataset squad && \
-python compute_embedding_cossim.py --model-id Qwen/Qwen3-32B --dataset squad
-
 python plot_trend.py --model-id gpt2 gpt2-medium gpt2-large gpt2-xl --model-family gpt2 --dataset pubmed
 python plot_trend.py --model-id gpt2 gpt2-medium gpt2-large gpt2-xl --model-family gpt2 --dataset imdb
 python plot_trend.py --model-id gpt2 gpt2-medium gpt2-large gpt2-xl --model-family gpt2 --dataset squad
-
-python plot_trend.py --model-id Qwen-Qwen3-0.6B Qwen-Qwen3-1.7B Qwen-Qwen3-4B Qwen-Qwen3-8B Qwen-Qwen3-14B Qwen-Qwen3-32B --model-family Qwen3 --dataset pubmed
-
-python plot_trend.py --model-id Qwen-Qwen3-0.6B Qwen-Qwen3-1.7B Qwen-Qwen3-4B Qwen-Qwen3-8B Qwen-Qwen3-14B Qwen-Qwen3-32B --model-family Qwen3 --dataset imdb
-
-python plot_trend.py --model-id Qwen-Qwen3-0.6B Qwen-Qwen3-1.7B Qwen-Qwen3-4B Qwen-Qwen3-8B Qwen-Qwen3-14B Qwen-Qwen3-32B --model-family Qwen3 --dataset squad
 ```
 
 ## Mid-training experiments
