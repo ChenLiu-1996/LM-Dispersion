@@ -169,7 +169,7 @@ For example, under `LM_dispersion/midtrain_gpt2_huggingface`.
     ```
 
 ## Pre-training experiments
-We used Primus to perform the pre-training. See this repository.
+We used Torch Titan to perform the pre-training. See [this repository](https://github.com/xingzhis/torchtitan).
 
 
 ## Dependencies
