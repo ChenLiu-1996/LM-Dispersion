@@ -58,7 +58,7 @@ Dispersion loss counteracts the embedding condensation effect during mid-trainin
 ```bibtex
 @inproceedings{liu2026dispersion,
   title={Dispersion loss counteracts embedding condensation and improves generalization in small language models},
-  author={Liu, Chen and Sun, Xingzhi and Xiao, Xi and Van Tassel, Alexandre and Xu, Ke and Reimann, Kristof and Liao, Danqi and Gerstein, Mark and Wang, Tianyang and Wang, Xiao and others},
+  author={Liu, Chen and Sun, Xingzhi and Xiao, Xi and Van Tassel, Alexandre and Xu, Ke and Reimann, Kristof and Liao, Danqi and Gerstein, Mark and Wang, Tianyang and Wang, Xiao and Krishnaswamy, Smita},
   booktitle={International conference on machine learning},
   year={2026},
   organization={PMLR}
