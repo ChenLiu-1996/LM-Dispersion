@@ -30,7 +30,7 @@ We observe a geometric phenomenon which we term **embedding condensation**, wher
 
 <img src="assets/motivation.png" width="800">
 
-<b>Takeaway 1</b>: Larger model, less condensation.
+**Takeaway 1**: Larger model, less condensation.
 <br>Within the same model family, smaller models exhibit more severe embedding condensation, with token embeddings collapsing toward near-parallel directions, while larger models resist this collapse.
 
 <img src="assets/observation.png" width="800">
@@ -39,17 +39,18 @@ To isolate the effect of model size from other confounding factors, we conduct a
 
 <img src="assets/controlled_experiment.png" width="800">
 
-<b>Takeaway 2</b>: Condensation occurs early on.
+**Takeaway 2**: Condensation occurs early on.
 <br>The embedding condensation phenomenon emerges at model initialization and is gradually mitigated, not exacerbated, by pre-training.
 
 <img src="assets/observation_training.png" width="400">
 
-<b>Takeaway 3</b>: Distillation is not a solution.
+**Takeaway 3**: Distillation is not a solution.
 <br>Knowledge distillation from a larger model does not transfer the desired resistance to embedding condensation.
 
 <img src="assets/observation_distillation.png" width="800">
 
-Embedding condensation reduces the expressivity of Transformers by collapsing token embedding vectors into narrow cones, under-utilizing the representation space. We hypothesize that by dispersing embeddings during training, smaller models can achieve representational qualities more similar to larger models, thus narrowing the performance gap without increasing the number of parameters.
+**Dispersion loss**
+<br>Embedding condensation reduces the expressivity of Transformers by collapsing token embedding vectors into narrow cones, under-utilizing the representation space. We hypothesize that by dispersing embeddings during training, smaller models can achieve representational qualities more similar to larger models, thus narrowing the performance gap without increasing the number of parameters.
 
 <img src="assets/loss_illustration.png" width="800">
 
