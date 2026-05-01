@@ -14,9 +14,10 @@
 
 </div>
 
-This is the official repository for the ICML 2026 paper
+This is the author's implementation of the ICML 2026 paper
 <br>[Dispersion loss counteracts embedding condensation and improves generalization in small language models](https://arxiv.org/pdf/2602.00217).
 
+The official version is the [Lab GitHub repo](https://github.com/KrishnaswamyLab/LM-Dispersion).
 
 ## A 5-minute intro to this paper
 This is an observation-driven improvement on language model training. We observe a geometric phenomenon which we term embedding condensation, where token embeddings collapse into a narrow cone-like subspace in some language models. We then design a training objective to counteract the effect.
