@@ -29,7 +29,7 @@ This is the official repository for the ICML 2026 paper
 }
 ```
 
-## Visualize observations
+## Scripts to reproduce our main observations on embedding condensation.
 
 1. Compute the embeddings.
 ```bash
