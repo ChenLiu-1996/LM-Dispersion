@@ -47,11 +47,13 @@ To isolate the effect of model size from other confounding factors, we conduct a
 
 <img src="assets/observation_distillation.png" width="800">
 
-Embedding condensation reduces the expressivity of Transformers by collapsing token embedding vectors into narrow cones, under-utilizing the representation space. We hypothesize that by dispersing embeddings during training, smaller models can achieve
-representational qualities more similar to larger models, thus narrowing the performance gap without increasing
-the number of parameters.
+Embedding condensation reduces the expressivity of Transformers by collapsing token embedding vectors into narrow cones, under-utilizing the representation space. We hypothesize that by dispersing embeddings during training, smaller models can achieve representational qualities more similar to larger models, thus narrowing the performance gap without increasing the number of parameters.
 
 <img src="assets/loss_illustration.png" width="800">
+
+Our dispersion loss is inspired by the "[diffuse and disperse](https://arxiv.org/abs/2506.09027)" paper with practical modifications.
+
+<img src="assets/table_loss.png" width="800">
 
 Dispersion loss counteracts the embedding condensation effect during mid-training and pre-training. A qualitative result is shown below, and quantitative results are shown in the paper.
 
