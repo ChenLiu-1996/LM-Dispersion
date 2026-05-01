@@ -19,8 +19,7 @@ This is the official repository for the ICML 2026 paper
 
 
 ## A 5-minute intro to this paper
-We define embedding condensation as the phenomenon that pairwise cosine similarities of token embeddings in Transformer models concentrate near 1, implying that embedding vectors point towards nearly identical directions and therefore condense into
-a narrow cone in the representation space.
+This is an observation-driven improvement on language model training. We observe a geometric phenomenon which we term embedding condensation, where token embeddings collapse into a narrow cone-like subspace in some language models. We then design a training objective to counteract the effect.
 
 <img src="assets/motivation.png" width="800">
 
