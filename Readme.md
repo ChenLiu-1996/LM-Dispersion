@@ -26,7 +26,7 @@ The official version is hosted at the [Lab GitHub repo](https://github.com/Krish
 ## A 5-minute intro to this paper
 **This paper presents an observation-driven improvement on language model training.** 
 
-We observe a geometric phenomenon which we term **embedding condensation**, where token embeddings collapse into a narrow cone-like subspace in some language models. We then design a training objective to counteract the effect.
+We observe a geometric phenomenon which we term **embedding condensation**, where token embeddings collapse into a narrow cone-like subspace in some language models. We then design a training objective called dispersion loss to counteract the effect.
 
 <img src="assets/motivation.png" width="800">
 
