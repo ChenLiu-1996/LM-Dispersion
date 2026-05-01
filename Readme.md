@@ -18,6 +18,42 @@ This is the official repository for the ICML 2026 paper
 <br>[Dispersion loss counteracts embedding condensation and improves generalization in small language models](https://arxiv.org/pdf/2602.00217).
 
 
+## A 5-minute intro to this paper
+We define embedding condensation as the phenomenon that pairwise cosine similarities of token embeddings in Transformer models concentrate near 1, implying that embedding vectors point towards nearly identical directions and therefore condense into
+a narrow cone in the representation space.
+
+<img src="assets/motivation.png" width="800">
+
+- Takeaway 1: Larger model, less condensation.
+Within the same model family, smaller models exhibit embedding condensation, with token embeddings collapsing toward near-parallel directions, while larger models resist this collapse.
+
+<img src="assets/observation.png" width="800">
+
+To further isolate the effect of model size from other confounding factors, we construct a controlled experiment where we pre-train GPT2-like models by varying only the MLP dimension while keeping all other components fixed, including the number of layers, embedding dimension, dataset, and training settings. The same phenomenon is observed.
+
+<img src="assets/controlled_experiment.png" width="800">
+
+- Takeaway 2: Condensation occurs early on.
+The embedding condensation phenomenon emerges at model initialization and is gradually mitigated, not exacerbated, by pre-training.
+
+<img src="assets/observation_training.png" width="400">
+
+- Takeaway 3: Distillation is not a solution.
+Knowledge distillation from a larger model does not transfer the desired resistance to embedding condensation.
+
+<img src="assets/observation_distillation.png" width="800">
+
+Embedding condensation reduces the expressivity of Transformers by collapsing token embedding vectors into narrow cones, under-utilizing the representation space. We hypothesize that by dispersing embeddings during training, smaller models can achieve
+representational qualities more similar to larger models, thus narrowing the performance gap without increasing
+the number of parameters.
+
+<img src="assets/loss_illustration.png" width="800">
+
+Dispersion loss counteracts the embedding condensation effect during mid-training and pre-training. A qualitative result is shown below, and quantitative results are shown in the paper.
+
+<img src="assets/results_condensation_counteract.png" width="800">
+
+
 ## Citation
 ```bibtex
 @inproceedings{liu2026dispersion,
@@ -29,7 +65,7 @@ This is the official repository for the ICML 2026 paper
 }
 ```
 
-## Scripts to reproduce our main observations on embedding condensation.
+## Reproduce our main observations on embedding condensation
 
 1. Compute the embeddings.
 ```bash
