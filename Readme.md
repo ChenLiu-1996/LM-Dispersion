@@ -1,14 +1,33 @@
-# Transformer Dispersion
+# LM-Dispersion
 
-## Usage
-1. Mid-train GPT2
-    Under `transformer_dispersion/midtrain_gpt2_huggingface`
-    ```
-    accelerate launch midtrain_gpt2.py --train_tokens 300_000_000 --dispersion 'Covariance' --dispersion_loc 'all' --dispersion_coeff 1.0 --hf_token $HUGGINGFACE_ACCESS_TOKEN
-    ```
+<div align="center">
+  [![OpenReview](https://img.shields.io/badge/OpenReview-eeeeee)](https://openreview.net/forum?id=pd6A7jB5D6)
+  [![ICML 2026](https://img.shields.io/badge/ICML_2026-purple)](https://openreview.net/pdf?id=pd6A7jB5D6)
+  [![arXiv](https://img.shields.io/badge/arXiv-Dispersion-firebrick)](https://arxiv.org/abs/2602.00217)
+  [![PDF](https://img.shields.io/badge/PDF-DADBDD)](https://arxiv.org/pdf/2602.00217)
+  [![GitHub Stars](https://img.shields.io/github/stars/ChenLiu-1996/LM-Dispersion.svg?style=social\&label=Stars)](https://github.com/ChenLiu-1996/LM-Dispersion)
+  <br>[![LinkedIn](https://img.shields.io/badge/LinkedIn-Chen-blue)](https://www.linkedin.com/in/chenliu1996/)
+  [![Google Scholar](https://img.shields.io/badge/Google_Scholar-Chen-4a86cf?logo=google-scholar&logoColor=white)](https://scholar.google.com/citations?user=3rDjnykAAAAJ&sortby=pubdate)
+  <br>[![Twitter Follow](https://img.shields.io/twitter/follow/Chen.svg?style=social)](https://x.com/ChenLiu_1996)
+  [![Twitter Follow](https://img.shields.io/twitter/follow/KrishnaswamyLab.svg?style=social)](https://x.com/KrishnaswamyLab)
+
+</div>
+
+This is the official repository for the ICML 2026 paper ``Dispersion loss counteracts embedding condensation and improves generalization in small language models''.
 
 
-### Visualize observations
+## Citation
+```bibtex
+@inproceedings{liu2026dispersion,
+  title={Dispersion loss counteracts embedding condensation and improves generalization in small language models},
+  author={Liu, Chen and Sun, Xingzhi and Xiao, Xi and Van Tassel, Alexandre and Xu, Ke and Reimann, Kristof and Liao, Danqi and Gerstein, Mark and Wang, Tianyang and Wang, Xiao and others},
+  booktitle={International conference on machine learning},
+  year={2026},
+  organization={PMLR}
+}
+```
+
+## Visualize observations
 
 1. Compute the embeddings.
 ```bash
@@ -104,6 +123,8 @@ python compute_embedding_cossim.py --model-id Qwen/Qwen3-14B --dataset squad && 
 python compute_embedding_cossim.py --model-id Qwen/Qwen3-32B --dataset squad
 
 python plot_trend.py --model-id gpt2 gpt2-medium gpt2-large gpt2-xl --model-family gpt2 --dataset pubmed
+python plot_trend.py --model-id gpt2 gpt2-medium gpt2-large gpt2-xl --model-family gpt2 --dataset imdb
+python plot_trend.py --model-id gpt2 gpt2-medium gpt2-large gpt2-xl --model-family gpt2 --dataset squad
 
 python plot_trend.py --model-id Qwen-Qwen3-0.6B Qwen-Qwen3-1.7B Qwen-Qwen3-4B Qwen-Qwen3-8B Qwen-Qwen3-14B Qwen-Qwen3-32B --model-family Qwen3 --dataset pubmed
 
@@ -111,6 +132,30 @@ python plot_trend.py --model-id Qwen-Qwen3-0.6B Qwen-Qwen3-1.7B Qwen-Qwen3-4B Qw
 
 python plot_trend.py --model-id Qwen-Qwen3-0.6B Qwen-Qwen3-1.7B Qwen-Qwen3-4B Qwen-Qwen3-8B Qwen-Qwen3-14B Qwen-Qwen3-32B --model-family Qwen3 --dataset squad
 ```
+
+## Mid-training experiments
+For example, under `LM_dispersion/midtrain_gpt2_huggingface`.
+
+1. Default loss
+    ```bash
+    accelerate launch midtrain_gpt2.py --lr 5e-5 --train_tokens 200_000_000 --hf_token $HUGGINGFACE_ACCESS_TOKEN --cache_dir $SCRATCH_DIR --seed $SEED --per_device_train_batch_size 32 --gradient_accumulation_steps 4
+    ```
+
+2. Dispersion loss
+    ```bash
+    accelerate launch midtrain_gpt2.py --lr 5e-5 --train_tokens 200_000_000 --dispersion 'angular_spread' --dispersion_loc 'all' --dispersion_coeff 0.1 --hf_token $HUGGINGFACE_ACCESS_TOKEN --cache_dir $SCRATCH_DIR --seed $SEED --per_device_train_batch_size 32 --gradient_accumulation_steps 4
+    ```
+
+3. Baseline methods
+    ```bash
+    launch midtrain_gpt2_other_counter_condensation.py --lr 5e-5 --train_tokens 200_000_000 --noisy_embedding --hf_token $HUGGINGFACE_ACCESS_TOKEN --cache_dir $SCRATCH_DIR --seed $SEED --per_device_train_batch_size 32 --gradient_accumulation_steps 4
+
+    launch midtrain_gpt2_other_counter_condensation.py --lr 5e-5 --train_tokens 200_000_000 --active_forgetting --hf_token $HUGGINGFACE_ACCESS_TOKEN --cache_dir $SCRATCH_DIR --seed $SEED --per_device_train_batch_size 32 --gradient_accumulation_steps 4
+    ```
+
+## Pre-training experiments
+We used Primus to perform the pre-training. See this repository.
+
 
 ## Dependencies
 We developed the codebase in a miniconda environment.
