@@ -58,7 +58,7 @@ Our dispersion loss is inspired by the "[diffuse and disperse](https://arxiv.org
 
 <img src="assets/table_loss.png" width="800">
 
-Dispersion loss counteracts the embedding condensation effect during mid-training and pre-training. A qualitative result is shown below, and quantitative results are shown in the paper.
+Dispersion loss counteracts the embedding condensation effect during mid-training and pre-training. A qualitative result is shown below, while more quantitative results can be found in the paper.
 
 <img src="assets/results_condensation_counteract.png" width="800">
 
