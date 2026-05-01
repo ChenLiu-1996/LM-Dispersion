@@ -1,22 +1,5 @@
 """
-Mid-train Qwen3 with optional NEFTune noise or active forgetting (Chen et al., NeurIPS 2023).
-
-  --noisy_embedding: NEFTune-style noise on token embeddings each train forward.
-  --active_forgetting: periodic reset of input token embeddings (Chen et al., 2023).
-
-Active forgetting follows Chen et al. (2023) / https://github.com/facebookresearch/language-model-plasticity:
-  (1) reset **input token embeddings only** to N(0, 0.02) when gs > 0 and gs % K == 0 (fairseq train timing),
-  (2) clear Adam moments (+ step) for those embedding parameters only; **do not** reset lm_head / body weights,
-  (3) When active forgetting: ``PerturbationTrainer.create_scheduler`` installs ``ActiveForgettingLRScheduler``
-      (real ``torch`` scheduler with ``get_last_lr`` / checkpoint state). Body LR matches HF cosine+warmup
-      (``midtrain_qwen3.py``); embedding LR uses peak ``--af-emb-peak-lr`` * linear warmup/decay with fairseq
-      ``lr_step_update`` index: ``speed = T // K``, ``emb_idx = (g * speed) % T`` (Chen et al. / language-model-plasticity).
-      Optimizer param groups use **full** body / embedding peak LRs at creation (same convention as HF ``Trainer``);
-      ``ActiveForgettingLRScheduler`` matches HF cosine index for **body** (``last_epoch``); embedding plasticity uses
-      ``last_epoch + 1`` (completed steps when the new lr applies).
-  (4) Same ``TrainingArguments`` as standard midtrain: ``lr_scheduler_type=cosine``, ``warmup_ratio=0.2``,
-      ``max_grad_norm=1.0`` (global grad clip only, like ``midtrain_qwen3.py``).
-
+Mid-train Qwen3 with either noisy embedding or active forgetting.
 Mutually exclusive with dispersion loss; training objective is standard CE only.
 """
 
