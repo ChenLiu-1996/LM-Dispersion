@@ -76,6 +76,8 @@ Dispersion loss counteracts the embedding condensation effect during mid-trainin
 
 ## Reproduce our main observations on embedding condensation
 
+Under `key_observations`.
+
 1. Compute the embeddings.
 ```bash
 # NOTE: Some runs do not have `--gpu` because that would lead to CUDA OOM on my device. If your device allows, you can turn on the `--gpu` flag.
