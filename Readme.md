@@ -2,10 +2,11 @@
 
   <h1><code>LM-Dispersion</code></h1>
 
-  [![OpenReview](https://img.shields.io/badge/OpenReview-eeeeee)](https://openreview.net/forum?id=pd6A7jB5D6)
-  [![ICML 2026](https://img.shields.io/badge/ICML_2026-purple)](https://openreview.net/pdf?id=pd6A7jB5D6)
   [![arXiv](https://img.shields.io/badge/arXiv-Dispersion-firebrick)](https://arxiv.org/abs/2602.00217)
   [![PDF](https://img.shields.io/badge/PDF-DADBDD)](https://arxiv.org/pdf/2602.00217)
+  [![Project_Page](https://img.shields.io/badge/Project_Page-B9DEF1)](https://chenliu-1996.github.io/projects/LM-Dispersion/)
+  [![ICML 2026](https://img.shields.io/badge/ICML_2026-purple)](https://openreview.net/pdf?id=pd6A7jB5D6)
+  [![OpenReview](https://img.shields.io/badge/OpenReview-eeeeee)](https://openreview.net/forum?id=pd6A7jB5D6)
   [![GitHub Stars](https://img.shields.io/github/stars/ChenLiu-1996/LM-Dispersion.svg?style=social\&label=Stars)](https://github.com/ChenLiu-1996/LM-Dispersion)
   <br>[![LinkedIn](https://img.shields.io/badge/LinkedIn-Chen-blue)](https://www.linkedin.com/in/chenliu1996/)
   [![LinkedIn](https://img.shields.io/badge/LinkedIn-Xingzhi-blue)](https://www.linkedin.com/in/xingzhi-sun)
