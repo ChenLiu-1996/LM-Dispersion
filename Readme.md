@@ -33,7 +33,7 @@ We observe a geometric phenomenon which we term **embedding condensation**, wher
 
 <img src="assets/motivation.png" width="800">
 
-**Takeaway 1**: Larger model, less condensation.
+**Feature 1**: Larger model, less condensation.
 <br>Within the same model family, smaller models exhibit more severe embedding condensation, with token embeddings collapsing toward near-parallel directions, while larger models resist this collapse.
 
 <img src="assets/observation.png" width="800">
@@ -42,17 +42,17 @@ This effect is also quite robust to the choice of input datasets.
 
 <img src="assets/supp_change_dataset.png" width="800">
 
-
-To isolate the effect of model size from other confounding factors, we conduct a controlled experiment where we pre-train GPT2-like models, varying only the MLP dimension while keeping all other components fixed, including the number of layers, embedding dimension, dataset, and training settings. The same phenomenon is observed.
+**Feature 2**: Reproducible under confounder-controlled settings.
+<br>To isolate the effect of model size from other confounding factors, we conduct a controlled experiment where we pre-train GPT2-like models, varying only the MLP dimension while keeping all other components fixed, including the number of layers, embedding dimension, dataset, and training settings. The same phenomenon is observed.
 
 <img src="assets/controlled_experiment.png" width="800">
 
-**Takeaway 2**: Condensation occurs early on.
+**Feature 3**: Condensation occurs early on.
 <br>The embedding condensation phenomenon emerges at model initialization and is gradually mitigated, not exacerbated, by pre-training.
 
 <img src="assets/observation_training.png" width="400">
 
-**Takeaway 3**: Distillation is not a solution.
+**Feature 4**: Distillation is not a solution.
 <br>Knowledge distillation from a larger model does not transfer the desired resistance to embedding condensation.
 
 <img src="assets/observation_distillation.png" width="800">
