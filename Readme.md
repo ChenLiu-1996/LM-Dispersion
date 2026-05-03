@@ -56,7 +56,7 @@ To isolate the effect of model size from other confounding factors, we conduct a
 
 <img src="assets/loss_illustration.png" width="800">
 
-Our dispersion loss is inspired by the "[diffuse and disperse](https://arxiv.org/abs/2506.09027)" paper with practical modifications.
+Our dispersion loss is inspired by the "[Diffuse and Disperse](https://arxiv.org/abs/2506.09027)" paper with practical modifications.
 
 <img src="assets/table_loss.png" width="800">
 
