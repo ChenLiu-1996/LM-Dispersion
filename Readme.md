@@ -42,7 +42,7 @@ This effect is also quite robust to the choice of input datasets.
 
 <img src="assets/supp_change_dataset.png" width="800">
 
-**Feature 2**: Reproducible under confounder-controlled settings.
+**Feature 2**: Reproducible when controlling for confounders.
 <br>To isolate the effect of model size from other confounding factors, we conduct a controlled experiment where we pre-train GPT2-like models, varying only the MLP dimension while keeping all other components fixed, including the number of layers, embedding dimension, dataset, and training settings. The same phenomenon is observed.
 
 <img src="assets/controlled_experiment.png" width="800">
