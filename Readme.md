@@ -216,3 +216,7 @@ You can run:
 ```bash
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 ```
+
+## Acknowledgements
+1. This work was initially motivated by the paper "[A mathematical perspective on Transformers](https://arxiv.org/abs/2312.10794)". We started this project early Apr 2025 after we watched [a talk on this paper](https://www.youtube.com/watch?v=3McmEtA3t_0).
+2. The design of the dispersion loss was largely inspired by [Runqian](https://raywang4.github.io/) and [Kaiming](https://scholar.google.com/citations?user=DhtAFkwAAAAJ)'s paper "[Diffuse and Disperse: Image Generation with Representation Regularization](https://arxiv.org/abs/2506.09027)". I was very surprised their paper wasn't accepted to ICLR 2026. Maybe we will have the honor to present our work with theirs together at ICML 2026.
