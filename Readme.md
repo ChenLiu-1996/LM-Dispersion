@@ -26,6 +26,10 @@ This is the author's repository for the ICML 2026 paper
 
 The official version is hosted at the [Lab GitHub repo](https://github.com/KrishnaswamyLab/LM-Dispersion).
 
+You are encouraged to read the illustrated walkthrough of the paper on the [project website](https://chenliu-1996.github.io/projects/LM-Dispersion/).
+
+<br>
+
 ## A 5-minute intro to this paper
 **This paper presents an observation-driven improvement on language model training.** 
 
