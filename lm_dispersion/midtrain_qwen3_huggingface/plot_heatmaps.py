@@ -10,7 +10,7 @@ from transformers import AutoConfig, AutoTokenizer, AutoModel
 import tempfile
 
 import_dir = '/'.join(os.path.realpath(__file__).split('/')[:-3])
-sys.path.insert(0, os.path.join(import_dir, 'prelim'))
+sys.path.insert(0, os.path.join(import_dir, 'key_observations'))
 from utils.text_data import get_random_long_text
 
 
