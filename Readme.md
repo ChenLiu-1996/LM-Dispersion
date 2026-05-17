@@ -80,7 +80,7 @@ Dispersion loss counteracts the embedding condensation effect during mid-trainin
 ## Disclaimers and future directions
 Please see our [project website](https://chenliu-1996.github.io/projects/LM-Dispersion/) for disclaimers and some future directions we suggest.
 
-## [News] PyPI support: embedding condensation
+## [New] PyPI support: embedding condensation
 
 We have provided the computation and visualzation of embedding condensation into a PyPI package!
 
@@ -100,7 +100,6 @@ pip install embedding-condensation --upgrade
 
 ```python3
 import numpy as np
-import pytest
 from transformers import AutoModel, AutoTokenizer
 from embedding_condensation import measure_embedding_condensation
 
