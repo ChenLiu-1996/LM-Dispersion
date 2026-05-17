@@ -34,6 +34,7 @@ The official version is hosted at the [Lab GitHub repo](https://github.com/Krish
 <br>
 
 ## A 5-minute intro to this paper
+
 **This paper presents an observation-driven improvement on language model training.**
 
 We observe a geometric phenomenon which we term **embedding condensation**, where token embeddings collapse into a narrow cone-like subspace in smaller language models. We then design a training objective called dispersion loss to counteract the effect.
@@ -78,6 +79,7 @@ Dispersion loss counteracts the embedding condensation effect during mid-trainin
 <img src="assets/results_condensation_counteract.png" width="800">
 
 <br>
+
 
 ## Disclaimers and future directions
 Please see our [project website](https://chenliu-1996.github.io/projects/LM-Dispersion/) for disclaimers and some future directions we suggest.
@@ -124,7 +126,12 @@ result = measure_embedding_condensation(
 print(result.cossim_by_layer.shape)
 ```
 
-## Reproduce our main observations on embedding condensation
+## Reproducing the results in the paper
+
+<details>
+  <summary>Click to expand</summary>
+
+### Our main observations on embedding condensation
 
 Under `key_observations`.
 
@@ -205,7 +212,7 @@ python plot_trend.py --model-id gpt2 gpt2-medium gpt2-large gpt2-xl --model-fami
 python plot_trend.py --model-id gpt2 gpt2-medium gpt2-large gpt2-xl --model-family gpt2 --dataset squad
 ```
 
-## Mid-training experiments
+### Mid-training experiments
 For example, under `LM_dispersion/midtrain_gpt2_huggingface`.
 
 1. Default loss
@@ -225,8 +232,10 @@ For example, under `LM_dispersion/midtrain_gpt2_huggingface`.
     launch midtrain_gpt2_other_counter_condensation.py --lr 5e-5 --train_tokens 200_000_000 --active_forgetting --hf_token $HUGGINGFACE_ACCESS_TOKEN --cache_dir $SCRATCH_DIR --seed $SEED --per_device_train_batch_size 32 --gradient_accumulation_steps 4
     ```
 
-## Pre-training experiments
+### Pre-training experiments
 We used Torch Titan to perform the pre-training. See [this repository](https://github.com/xingzhis/torchtitan).
+
+</details>
 
 
 ## Dependencies
