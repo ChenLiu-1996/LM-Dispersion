@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "embedding-condensation"
+version = "2.0"
+description = "Measure layer-wise token embedding cosine similarity, assessing the severity of embedding condensation. Concept from [ICML 2026] Dispersion loss counteracts embedding condensation and improves generalization in small language models."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [{ name = "Chen Liu" }]
+keywords = ["language-models", "embeddings", "transformers", "representation-geometry"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "numpy>=1.24",
+    "torch>=2.0",
+    "transformers>=4.40,<4.48",
+    "datasets>=2.14",
+    "nltk>=3.8",
+    "matplotlib>=3.7",
+    "tqdm>=4.65",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[project.urls]
+Homepage = "https://chenliu-1996.github.io/projects/LM-Dispersion/"
+Repository = "https://github.com/ChenLiu-1996/LM-Dispersion"
+
+[tool.hatch.build.targets.wheel]
+packages = ["embedding_condensation"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
