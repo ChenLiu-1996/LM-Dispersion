@@ -96,6 +96,7 @@ pip install embedding-condensation --upgrade
 
 2. Use it by simply passing in a `transformers` model and tokenizer, as shown in the example below.
 
+- `repetitions` determines the number of text sequences sampled for the computation. We used 100 in the paper.
 - `max_length` determines the number of tokens in the context.
 - `dataset` currently supports [`wikipedia`, `pubmed`, `imdb`, `squad`].
 - `min_word_count` and `max_word_count` faciliates the text parser when grabbing a random part from the `dataset` corpse.
