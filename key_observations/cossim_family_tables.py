@@ -5,7 +5,7 @@ Spearman and Kendall vs layer index.
 
 NPZ: results_cossim_{dataset}.npz with array ``cossim_matrix_by_layer`` of shape
 (L, S, S) — L = number of hidden-state layers, S = sequence length (e.g. 512);
-each [ℓ, :, :] is the token×token cosine-similarity matrix for layer ℓ, averaged
+each [l, :, :] is the token-by-token cosine-similarity matrix for layer l, averaged
 over forward-pass repetitions. Row metrics use mean over (1,2) → one scalar per layer.
 """
 from __future__ import annotations
