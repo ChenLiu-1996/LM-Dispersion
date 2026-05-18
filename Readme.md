@@ -104,7 +104,6 @@ pip install embedding-condensation --upgrade
 
 
 ```python3
-import numpy as np
 from transformers import AutoModel, AutoTokenizer
 from embedding_condensation import measure_embedding_condensation
 
