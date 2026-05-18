@@ -86,7 +86,7 @@ Please see our [project website](https://chenliu-1996.github.io/projects/LM-Disp
 
 ## Simple demo with PyPI support: embedding condensation
 
-We have provided the computation and visualzation of embedding condensation into a PyPI package!
+We now provide the computation and visualzation of embedding condensation via a PyPI package!
 
 1. Install or upgrade the package.
 
