@@ -7,7 +7,7 @@
   [![Project_Page](https://img.shields.io/badge/Project_Page-B9DEF1)](https://chenliu-1996.github.io/projects/LM-Dispersion/)
   [![OpenReview](https://img.shields.io/badge/OpenReview-eeeeee)](https://openreview.net/forum?id=pd6A7jB5D6)
   [![ICML 2026](https://img.shields.io/badge/ICML_2026-purple)](https://icml.cc/virtual/2026/poster/61492)
-  [![Video](https://img.shields.io/badge/Video-0f4d92)](https://recorder-v3.slideslive.com/?share=110778&s=bed912db-dfea-4425-bcfb-fd5eef907a07)
+  [![Video](https://img.shields.io/badge/Video-gold)](https://recorder-v3.slideslive.com/?share=110778&s=bed912db-dfea-4425-bcfb-fd5eef907a07)
   [![GitHub Stars](https://img.shields.io/github/stars/ChenLiu-1996/LM-Dispersion.svg?style=social\&label=Stars)](https://github.com/ChenLiu-1996/LM-Dispersion)
   <br>[![Latest PyPI version](https://img.shields.io/pypi/v/embedding-condensation.svg)](https://pypi.org/project/embedding-condensation/)
   [![PyPI download 3 month](https://static.pepy.tech/badge/embedding-condensation)](https://pepy.tech/projects/embedding-condensation)
