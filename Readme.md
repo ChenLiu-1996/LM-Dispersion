@@ -32,7 +32,6 @@ The official version is hosted at the [Lab GitHub repo](https://github.com/Krish
 
 **You are encouraged to read the illustrated walkthrough of the paper on the [project website](https://chenliu-1996.github.io/projects/LM-Dispersion/).**
 
-<video src="https://chenliu-1996.github.io/projects/LM-Dispersion/Dispersion_demo.mp4" controls autoplay loop muted charset="utf-8" style="max-width: 100%;"></video>
 
 <br>
 
